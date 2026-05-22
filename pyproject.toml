@@ -1,0 +1,20 @@
+[project]
+name = "mobile-de-scraper"
+version = "0.1.0"
+description = "Playwright-based mobile.de NRW vendor and vehicle scraper for Alphabots task"
+requires-python = ">=3.11"
+dependencies = [
+  "playwright>=1.40.0",
+  "beautifulsoup4>=4.12.0",
+  "lxml>=5.0.0",
+  "pandas>=2.0.0",
+  "openpyxl>=3.1.0",
+  "python-docx>=1.0.0",
+  "pydantic>=2.0.0",
+  "tqdm>=4.60.0",
+  "xlsxwriter>=3.1.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

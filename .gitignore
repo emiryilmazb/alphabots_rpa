@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+venv/
+env/
+.env
+
+# Logs
+logs/
+*.log
+
+# Data and Output
+data/checkpoints/*
+!data/checkpoints/.gitkeep
+data/output/*
+!data/output/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/raw/*
+!data/raw/.gitkeep
