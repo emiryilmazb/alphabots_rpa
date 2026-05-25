@@ -7,8 +7,10 @@ Crawls the paginated state dealer directory to collect all dealer URLs.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from src.config import ScraperConfig
 from src.scraper.browser import BrowserManager
+from src.scraper.fetchers import FetchResult, FetchStrategyManager, StaticValidation
 from src.scraper.parsers import parse_regional_page, normalize_dealer_url
 
 logger = logging.getLogger("mobile_de.regional")
@@ -20,8 +22,12 @@ class RegionalScraper:
     def __init__(self, browser: BrowserManager, config: ScraperConfig):
         self.browser = browser
         self.config = config
+        self.fetch_manager = FetchStrategyManager(config, browser)
 
-    async def collect_dealer_entries(self) -> list[dict[str, str]]:
+    async def collect_dealer_entries(
+        self,
+        on_dealer: Callable[[dict[str, str]], Awaitable[None]] | None = None,
+    ) -> list[dict[str, str]]:
         """
         Paginate through all state pages and collect dealer entries.
 
@@ -42,22 +48,25 @@ class RegionalScraper:
             url = self.config.state_page_url.format(page=page_num)
             logger.info("Scraping regional page %d: %s", page_num, url)
 
-            success = await self.browser.safe_goto(url)
-            if not success:
+            result = await self.fetch_manager.fetch(url, validator=self._validate_regional_static)
+            if not result.ok:
                 logger.warning(
                     "Failed to load regional page %d (%s). Stopping pagination.",
                     page_num,
-                    self.browser.last_error or "unknown error",
+                    result.error_message or result.fallback_reason or "unknown error",
                 )
                 break
 
-            # Wait briefly for either rendered dealer links or the empty page state.
-            try:
-                await self.browser.page.wait_for_load_state("networkidle", timeout=10000)
-            except Exception:
-                logger.debug("Network idle wait timed out on regional page %d.", page_num)
+            if result.strategy.startswith("playwright"):
+                # Wait briefly for either rendered dealer links or the empty page state.
+                try:
+                    await self.browser.page.wait_for_load_state("networkidle", timeout=10000)
+                except Exception:
+                    logger.debug("Network idle wait timed out on regional page %d.", page_num)
+                html = await self.browser.get_page_html()
+            else:
+                html = result.html
 
-            html = await self.browser.get_page_html()
             dealers = parse_regional_page(html)
 
             if not dealers:
@@ -71,6 +80,8 @@ class RegionalScraper:
                 if d["url"] and d["url"] not in seen_urls:
                     seen_urls.add(d["url"])
                     all_dealers.append(d)
+                    if on_dealer is not None:
+                        await on_dealer(dict(d))
                     new_count += 1
 
             logger.info("Page %d: found %d dealers (%d new, %d total)",
@@ -91,3 +102,10 @@ class RegionalScraper:
 
         logger.info("Regional scraping complete: %d unique dealers collected.", len(all_dealers))
         return all_dealers
+
+    @staticmethod
+    def _validate_regional_static(result: FetchResult) -> StaticValidation:
+        dealers = parse_regional_page(result.html)
+        if not dealers:
+            return StaticValidation(False, "no_dealers_in_static_html")
+        return StaticValidation(True)

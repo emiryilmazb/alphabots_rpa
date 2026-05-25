@@ -1,0 +1,45 @@
+services:
+  scraper:
+    build:
+      context: .
+      args:
+        PLAYWRIGHT_VERSION: "1.57.0"
+    image: mobile-de-scraper:phase2
+    shm_size: "2gb"
+    environment:
+      STATE: ${STATE:-nordrhein-westfalen}
+      BROWSER: ${BROWSER:-chromium}
+      BROWSER_MODE: ${BROWSER_MODE:-headless}
+      HEADLESS: ${HEADLESS:-true}
+      SAVE_DEBUG_ARTIFACTS: ${SAVE_DEBUG_ARTIFACTS:-true}
+      DEBUG: ${DEBUG:-false}
+      FETCH_STRATEGY: ${FETCH_STRATEGY:-auto}
+      CURL_CONCURRENCY: ${CURL_CONCURRENCY:-4}
+      PLAYWRIGHT_CONCURRENCY: ${PLAYWRIGHT_CONCURRENCY:-3}
+      PIPELINE_MODE: ${PIPELINE_MODE:-legacy}
+      REGIONAL_CONCURRENCY: ${REGIONAL_CONCURRENCY:-1}
+      VENDOR_CONCURRENCY: ${VENDOR_CONCURRENCY:-1}
+      VEHICLE_LISTING_CONCURRENCY: ${VEHICLE_LISTING_CONCURRENCY:-1}
+      VEHICLE_DETAIL_CONCURRENCY: ${VEHICLE_DETAIL_CONCURRENCY:-1}
+      DETAIL_POLICY: ${DETAIL_POLICY:-missing-required}
+      RESUME: ${RESUME:-true}
+      CLEAN_RUN: ${CLEAN_RUN:-false}
+      FORCE_RESUME: ${FORCE_RESUME:-false}
+      CLEAR_CHECKPOINTS: ${CLEAR_CHECKPOINTS:-false}
+      CLEAR_STATE: ${CLEAR_STATE:-false}
+      MAX_VENDORS: ${MAX_VENDORS:-0}
+      MAX_CARS_PER_VENDOR: ${MAX_CARS_PER_VENDOR:-0}
+      MAX_PAGES_PER_STATE: ${MAX_PAGES_PER_STATE:-0}
+      SKIP_VEHICLE_DETAILS: ${SKIP_VEHICLE_DETAILS:-false}
+      TRAVERSE_VEHICLE_CATEGORIES: ${TRAVERSE_VEHICLE_CATEGORIES:-true}
+      MAX_DETAIL_FAILURES: ${MAX_DETAIL_FAILURES:-2}
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+      RETRY_DELAY: ${RETRY_DELAY:-5.0}
+      CHECKPOINT_EVERY: ${CHECKPOINT_EVERY:-50}
+      FLUSH_EVERY: ${FLUSH_EVERY:-100}
+      MIN_DELAY: ${MIN_DELAY:-2.0}
+      MAX_DELAY: ${MAX_DELAY:-5.0}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    command: ["python", "-m", "src.main"]

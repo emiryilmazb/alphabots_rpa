@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.models import VEHICLE_COLUMNS, VENDOR_COLUMNS, validate_required_columns
+
 logger = logging.getLogger("mobile_de.excel")
 
 
@@ -16,25 +18,43 @@ def generate_excel(
     df_cars_raw: pd.DataFrame,
     df_cars_processed: pd.DataFrame,
     dashboard: dict[str, pd.DataFrame],
+    *,
+    run_summary: dict | pd.DataFrame | None = None,
+    vendor_coverage: pd.DataFrame | None = None,
+    vehicle_coverage: pd.DataFrame | None = None,
+    errors: list[dict] | pd.DataFrame | None = None,
 ) -> None:
     """Write the required multi-sheet Excel workbook."""
     logger.info("Generating Excel workbook: %s", path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    df_vendors = _ensure_columns(df_vendors, VENDOR_COLUMNS)
+    df_cars_raw = _with_finanzierung_alias(df_cars_raw)
+    df_cars_processed = _with_finanzierung_alias(df_cars_processed)
+    df_cars_raw = _ensure_columns(df_cars_raw, VEHICLE_COLUMNS)
+    df_cars_processed = _ensure_columns(df_cars_processed, VEHICLE_COLUMNS)
+    _validate_or_raise(df_vendors, VENDOR_COLUMNS, "Vendors")
+    _validate_or_raise(df_cars_processed, VEHICLE_COLUMNS, "Vehicles")
 
     with pd.ExcelWriter(str(path), engine="xlsxwriter") as writer:
         wb = writer.book
         formats = _formats(wb)
 
         required_sheets = [
+            ("Vendors", df_vendors),
+            ("Vehicles", df_cars_processed),
             ("Vendors_Raw", df_vendors),
             ("Cars_Raw", df_cars_raw),
             ("Cars_Processed", df_cars_processed),
+            ("Run_Summary", _run_summary_df(run_summary)),
+            ("Data_Coverage", _coverage_df(vendor_coverage, vehicle_coverage)),
+            ("Errors", _errors_df(errors)),
             ("Vendor_Summary", dashboard.get("vendor_summary", pd.DataFrame())),
             ("Manufacturer_Summary", dashboard.get("manufacturer_summary", pd.DataFrame())),
             ("Category_Summary", dashboard.get("category_summary", pd.DataFrame())),
             ("Best_Deals", dashboard.get("best_deals", pd.DataFrame())),
             ("Worst_Deals", dashboard.get("worst_deals", pd.DataFrame())),
             ("Efficient_Vehicles", dashboard.get("efficient_vehicles", pd.DataFrame())),
+            ("Classification_Summary", _classification_summary(df_cars_processed)),
         ]
         for sheet_name, df in required_sheets:
             _write_sheet(writer, df, sheet_name, formats)
@@ -50,6 +70,99 @@ def generate_excel(
         _write_dashboard_sheet(writer, wb, dashboard, formats)
 
     logger.info("Excel workbook saved: %s", path)
+
+
+def _with_finanzierung_alias(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep Financing and add the German alias expected by the task output."""
+    if df is None:
+        return pd.DataFrame()
+    df = df.copy()
+    if "Financing" in df.columns and "Finanzierung" not in df.columns:
+        df["Finanzierung"] = df["Financing"]
+    if "Finanzierung" in df.columns and "Financing" not in df.columns:
+        df["Financing"] = df["Finanzierung"]
+    return df
+
+
+def _ensure_columns(df: pd.DataFrame | None, columns: list[str]) -> pd.DataFrame:
+    if df is None:
+        df = pd.DataFrame()
+    df = df.copy()
+    for column in columns:
+        if column not in df.columns:
+            df[column] = ""
+    remaining = [column for column in df.columns if column not in columns]
+    return df[columns + remaining]
+
+
+def _validate_or_raise(df: pd.DataFrame, columns: list[str], dataset: str) -> None:
+    missing = validate_required_columns(df, columns)
+    if missing:
+        raise ValueError(f"{dataset} output is missing required columns: {', '.join(missing)}")
+
+
+def _run_summary_df(run_summary: dict | pd.DataFrame | None) -> pd.DataFrame:
+    if run_summary is None:
+        return pd.DataFrame(columns=["metric", "value"])
+    if isinstance(run_summary, pd.DataFrame):
+        return run_summary
+    return pd.DataFrame(
+        [{"metric": key, "value": value} for key, value in run_summary.items()]
+    )
+
+
+def _coverage_df(
+    vendor_coverage: pd.DataFrame | None,
+    vehicle_coverage: pd.DataFrame | None,
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    for dataset, coverage in [("vendors", vendor_coverage), ("vehicles", vehicle_coverage)]:
+        if coverage is None:
+            continue
+        work = coverage.copy()
+        work.insert(0, "dataset", dataset)
+        frames.append(work)
+    if not frames:
+        return pd.DataFrame(columns=["dataset", "field", "non_empty_count", "total_count", "coverage_pct"])
+    return pd.concat(frames, ignore_index=True)
+
+
+def _classification_summary(df: pd.DataFrame) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    for field, label in [
+        ("vehicle_category", "vehicle_category"),
+        ("manufacturer_origin", "manufacturer_origin"),
+        ("Fahrzeug_Klasse", "Fahrzeug_Klasse"),
+        ("Herkunftsland", "Herkunftsland"),
+    ]:
+        if field not in df.columns:
+            continue
+        summary = (
+            df[field]
+            .replace("", pd.NA)
+            .fillna("Andere")
+            .value_counts(dropna=False)
+            .reset_index()
+        )
+        summary.columns = ["value", "count"]
+        summary.insert(0, "classification_field", label)
+        frames.append(summary)
+    if not frames:
+        return pd.DataFrame(columns=["classification_field", "value", "count"])
+    return pd.concat(frames, ignore_index=True)
+
+
+def _errors_df(errors: list[dict] | pd.DataFrame | None) -> pd.DataFrame:
+    if errors is None:
+        return pd.DataFrame(columns=["type", "url", "error"])
+    if isinstance(errors, pd.DataFrame):
+        return errors
+    df = pd.DataFrame(errors)
+    for column in ["type", "url", "error"]:
+        if column not in df.columns:
+            df[column] = ""
+    remaining = [column for column in df.columns if column not in {"type", "url", "error"}]
+    return df[["type", "url", "error", *remaining]]
 
 
 def _formats(wb) -> dict:

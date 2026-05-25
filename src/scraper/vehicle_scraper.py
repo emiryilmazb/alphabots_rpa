@@ -15,6 +15,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
 from src.config import ScraperConfig
 from src.scraper.browser import BrowserManager
+from src.scraper.fetchers import FetchResult, FetchStrategyManager, StaticValidation
 from src.scraper.parsers import (
     clean_text,
     normalize_vehicle_url,
@@ -50,6 +51,7 @@ class VehicleScraper:
     def __init__(self, browser: BrowserManager, config: ScraperConfig):
         self.browser = browser
         self.config = config
+        self.fetch_manager = FetchStrategyManager(config, browser)
         self.listing_summaries: dict[str, dict[str, str]] = {}
 
     async def collect_vehicle_urls(self, dealer_url: str) -> list[str]:
@@ -272,6 +274,9 @@ class VehicleScraper:
             summary["Vehicle_Category"] = category_value
         if category_value:
             label = VEHICLE_CATEGORY_LABELS.get(category_value, "")
+            summary.setdefault("source_category", category_value)
+            summary.setdefault("source_category_label", label)
+            summary.setdefault("source_category_url", "")
             if label and VehicleScraper._should_replace_vehicle_type(summary.get("Fahrzeugtyp", "")):
                 summary["Fahrzeugtyp"] = label
 
@@ -554,6 +559,7 @@ class VehicleScraper:
             "Anzahl der Türen": "",
             "Anzahl der Fahrzeughalter": "",
             "Financing": "",
+            "Finanzierung": "",
             "Bank": "",
             "Darlehensvermittler": "",
             "Fahrzeugpreis": "",
@@ -566,23 +572,38 @@ class VehicleScraper:
             "Gesamtbetrag": "",
             "Laufzeit": "",
             "Vehicle_URL": vehicle_url,
+            "source_vehicle_url": vehicle_url,
+            "fetch_strategy": "",
+            "fetch_status": "",
+            "parse_status": "partial",
+            "vehicle_data_source": "detail_page",
         }
         if fallback:
             self._apply_fallback(vehicle, fallback)
 
         logger.debug("Scraping vehicle: %s", vehicle_url)
 
-        success = await self.browser.safe_goto(vehicle_url)
-        if not success:
+        fetch_result = await self.fetch_manager.fetch(
+            vehicle_url,
+            validator=self._validate_vehicle_static,
+        )
+        if not fetch_result.ok:
             logger.warning("Failed to load vehicle page: %s", vehicle_url)
+            vehicle["parse_status"] = fetch_result.error_message or "fetch_failed"
             return vehicle
 
-        await asyncio.sleep(1.5)
+        vehicle["fetch_strategy"] = fetch_result.strategy
+        vehicle["fetch_status"] = fetch_result.status_code or ""
+        vehicle["parse_status"] = "ok"
+        vehicle["vehicle_data_source"] = "detail_page" if fetch_result.strategy.startswith("playwright") else "static_html"
 
-        # Try to click "Mehr anzeigen" to expand all technical data
-        await self._expand_tech_data()
-
-        html = await self.browser.get_page_html()
+        if fetch_result.strategy.startswith("playwright"):
+            await asyncio.sleep(1.5)
+            # Try to click "Mehr anzeigen" to expand all technical data
+            await self._expand_tech_data()
+            html = await self.browser.get_page_html()
+        else:
+            html = fetch_result.html
 
         # 1. Parse title → Brand + Model
         brand, model = parse_vehicle_title(html)
@@ -639,6 +660,8 @@ class VehicleScraper:
         for fin_key, vehicle_key in finance_mapping.items():
             if fin_key in financing:
                 vehicle[vehicle_key] = financing[fin_key]
+        if vehicle.get("Financing") and not vehicle.get("Finanzierung"):
+            vehicle["Finanzierung"] = vehicle["Financing"]
 
         logger.debug("Vehicle scraped: %s %s | %s", vehicle["Markes"],
                       vehicle["Models"], vehicle["Preis"])
@@ -695,3 +718,15 @@ class VehicleScraper:
 
         except Exception as e:
             logger.debug("Inline stats extraction: %s", e)
+
+    @staticmethod
+    def _validate_vehicle_static(result: FetchResult) -> StaticValidation:
+        html = result.html
+        brand, model = parse_vehicle_title(html)
+        price = parse_vehicle_price(html)
+        specs = parse_vehicle_specs(html)
+        if not (brand or model):
+            return StaticValidation(False, "missing_vehicle_title_in_static_html")
+        if not (price or specs):
+            return StaticValidation(False, "missing_vehicle_fields_in_static_html")
+        return StaticValidation(True)

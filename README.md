@@ -1,126 +1,167 @@
-# Mobile.de NRW Vendor and Vehicle Scraper
+# Mobile.de NRW Scraper
 
-Production-oriented Python project for the Alphabots developer task. The default target is:
+Professional Python RPA/web-scraping solution for the Alphabots GmbH developer task.
+The default scope is the public mobile.de regional directory for Nordrhein-Westfalen:
 
 ```text
 https://home.mobile.de/regional/nordrhein-westfalen/0.html
 ```
 
-The pipeline discovers vendors from the mobile.de regional directory, extracts dealer/contact data and vehicle listing data, cleans and classifies records, and generates an Excel dashboard plus a Word methodology report.
+Schema completeness is guaranteed; source completeness is measured. All required
+output columns are created consistently, unavailable source values are left empty,
+and coverage/error sheets explain what was actually available in the source pages.
 
 ## Features
 
-- Playwright browser automation for JavaScript-rendered pages, consent handling, contact modals, and phone reveal buttons.
-- BeautifulSoup parsing with robust fallbacks for rendered DOM, JSON-LD, and mobile.de Next.js payloads.
-- Stable vendor IDs assigned after alphabetic sorting of normalized dealer URLs: `C0000001`, `C0000002`, etc.
-- Checkpoint/resume support for dealers, vendors, vehicles, and completed vendor inventories.
-- Polite delays, retry-aware navigation, duplicate vendor/vehicle filtering, and error logging.
-- Raw CSV/JSON outputs after vendor and vehicle scraping.
-- Dealer inventories are traversed across mobile.de vehicle categories such as Pkw, Motorrad, Wohnmobile, Lkw, Sattelzugmaschinen, Auflieger, Anhänger, Baumaschinen, Busse, Agrarfahrzeuge, and Stapler.
-- Vehicle records are enriched from mobile.de structured `searchResults.listings` payloads, including finance-plan fields when exposed in the listing data.
-- pandas cleaning, numeric parsing, vehicle type classification, and manufacturer country classification.
-- Excel workbook with required sheets, filters, frozen headers, formats, summary tables, and charts.
-- Word report covering methodology, preprocessing, dashboard metrics, assumptions, limitations, and key results.
-- Compliance behavior: the scraper does not bypass CAPTCHA, login gates, or mobile.de access-denied protections. If blocked, it saves partial/empty outputs and records the limitation.
+- Local, strict headless, Firefox/Chrome, Docker, and Docker/Xvfb execution paths.
+- Playwright browser automation for rendered pages, consent controls, contact sections, and dynamic dealer inventory pages.
+- `curl_cffi` fast static fetcher where safe, with Playwright fallback for dynamic pages.
+- Legacy sequential mode plus SQLite-backed producer-consumer pipeline mode.
+- Bounded vendor and vehicle detail concurrency; no shared Playwright page across concurrent workers.
+- Stable Händler IDs in `C0000001` format, persisted across SQLite resume runs.
+- Batched checkpoints/state storage; full CSV/JSON exports happen at the end, not after every vehicle.
+- Debug HTML and screenshots when enabled.
+- Required Excel workbook and Word report with run summary, data coverage, errors, classification, and dashboard findings.
 
-## Project Structure
+## Architecture
 
 ```text
-mobile_de_scraper/
-|-- README.md
-|-- requirements.txt
-|-- pyproject.toml
-|-- .env.example
-|-- src/
-|   |-- main.py
-|   |-- config.py
-|   |-- models.py
-|   |-- scraper/
-|   |   |-- browser.py
-|   |   |-- regional_scraper.py
-|   |   |-- vendor_scraper.py
-|   |   |-- vehicle_scraper.py
-|   |   `-- parsers.py
-|   |-- processing/
-|   |   |-- cleaning.py
-|   |   |-- classification.py
-|   |   `-- dashboard.py
-|   |-- output/
-|   |   |-- excel_writer.py
-|   |   `-- word_report.py
-|   `-- utils/
-|       |-- logging_utils.py
-|       |-- retry.py
-|       `-- checkpoints.py
-|-- data/
-|   |-- raw/
-|   |-- processed/
-|   `-- output/
-`-- tests/
-    |-- test_classification.py
-    |-- test_cleaning.py
-    `-- test_parsers.py
+Regional discovery
+  -> vendor jobs / vendors table
+  -> vendor workers collect dealer info and listing cards
+  -> vehicle jobs
+  -> bounded vehicle detail workers
+  -> single SQLite writer
+  -> final raw CSV/JSON, processed CSV/JSON, Excel, Word
 ```
 
-## Setup
+Key modules:
+
+- `src/config.py`: CLI/env configuration.
+- `src/scraper/browser.py`: hardened Playwright lifecycle, browser modes, debug artifacts.
+- `src/scraper/fetchers/`: `FetchResult`, curl fetcher, Playwright fetcher, strategy manager.
+- `src/scraper/state_store.py`: SQLite run, vendor, vehicle job, vehicle, and error state.
+- `src/scraper/pipeline.py`: bounded producer-consumer pipeline.
+- `src/processing/`: cleaning, classification, dashboard scoring.
+- `src/output/`: Excel workbook and Word report generation.
+
+## Installation
 
 ```bash
-cd mobile_de_scraper
 python -m venv venv
 venv\Scripts\activate
 python -m pip install -r requirements.txt
-python -m playwright install chromium
+python -m playwright install
 ```
 
-## Usage
+On Linux without Docker:
 
-Small test run:
+```bash
+python -m playwright install-deps
+python -m playwright install
+```
+
+## Local Runs
+
+Small smoke run:
 
 ```bash
 python -m src.main --state nordrhein-westfalen --max-vendors 2 --max-cars-per-vendor 3
 ```
 
-Full NRW run. In this environment mobile.de blocks headless Chromium, so the default is visible browser mode:
+Strict headless:
 
 ```bash
-python -m src.main --state nordrhein-westfalen
+python -m src.main --state nordrhein-westfalen --browser-mode headless --max-vendors 10
 ```
 
-Explicit visible browser run:
+Firefox headless:
 
 ```bash
-python -m src.main --state nordrhein-westfalen --max-vendors 5 --max-cars-per-vendor 10 --headless false
+python -m src.main --state nordrhein-westfalen --browser firefox --browser-mode headless --max-vendors 10
 ```
 
-Fresh run without old checkpoints:
+Visible local browser:
 
 ```bash
-python -m src.main --state nordrhein-westfalen --clear-checkpoints true --resume false
+python -m src.main --state nordrhein-westfalen --browser-mode headed --max-vendors 10
 ```
 
-CLI options:
+SQLite producer-consumer pipeline:
 
-| Option | Default | Description |
+```bash
+python -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --vendor-concurrency 2 --vehicle-detail-concurrency 3 --max-vendors 10
+```
+
+Clean run:
+
+```bash
+python -m src.main --state nordrhein-westfalen --clean-run true
+```
+
+## Docker / Cloud
+
+The Docker image version is tied to the Playwright package version in `requirements.txt`.
+
+Strict headless Docker:
+
+```bash
+docker compose up --build
+```
+
+Docker with Xvfb fallback:
+
+```bash
+BROWSER_MODE=xvfb HEADLESS=false docker compose up --build
+```
+
+Linux Xvfb without Docker:
+
+```bash
+xvfb-run -a python -m src.main --state nordrhein-westfalen --browser-mode xvfb --max-vendors 10
+```
+
+Strict headless is supported where the website serves the page normally. If a page is
+unavailable or returns access denied, the run records the failure reason and continues
+with measurable coverage where possible. Docker/Xvfb is the recommended server fallback
+when strict headless rendering is unreliable.
+
+## CLI Options
+
+| Option | Default | Purpose |
 |---|---:|---|
 | `--state` | `nordrhein-westfalen` | German state slug |
-| `--max-vendors` | `0` | Max vendors, where 0 means all |
-| `--max-cars-per-vendor` | `0` | Max vehicles per vendor across all categories, where 0 means all |
-| `--max-pages` | `0` | Max regional pages, where 0 means all |
-| `--skip-vehicle-details` | `false` | Save dealer listing-card data and skip detail pages; default tries detail pages and falls back when blocked |
-| `--traverse-vehicle-categories` | `true` | Visit known mobile.de vehicle categories for each vendor |
-| `--max-detail-failures` | `2` | Disable detail-page requests after repeated blocked/5xx responses |
-| `--headless` | `false` | Run Chromium headless when set to `true` |
-| `--fallback-to-headed-on-block` | `true` | Restart once in visible mode if headless is denied by site protection |
-| `--resume` | `true` | Resume from checkpoints |
-| `--clear-checkpoints` | `false` | Delete existing checkpoints before scraping |
-| `--min-delay` | `2.0` | Minimum polite delay in seconds |
-| `--max-delay` | `5.0` | Maximum polite delay in seconds |
+| `--start-url` | empty | Optional regional URL/template; `{page}` is supported |
+| `--max-vendors` | `0` | Vendor limit, 0 means unlimited |
+| `--max-cars-per-vendor` | `0` | Vehicle limit per vendor, 0 means unlimited |
+| `--max-vehicles-per-vendor` | empty | Alias for `--max-cars-per-vendor` |
+| `--max-pages` | `0` | Regional page limit |
+| `--browser` | `chromium` | `chromium`, `chrome`, or `firefox` |
+| `--browser-mode` | `headed` | `headless`, `headed`, or `xvfb` |
+| `--headless` | empty | Backward-compatible shortcut |
+| `--fetch-strategy` | `auto` | `auto`, `curl`, or `playwright` |
+| `--detail-policy` | `missing-required` | `always`, `missing-required`, `financing-only`, or `never` |
+| `--pipeline-mode` | `legacy` | `legacy` or SQLite `sqlite` |
+| `--regional-concurrency` | `1` | Regional producer setting |
+| `--vendor-concurrency` | `1` | SQLite vendor workers |
+| `--vehicle-listing-concurrency` | `1` | Listing traversal setting |
+| `--vehicle-detail-concurrency` | `1` | SQLite vehicle detail workers |
+| `--curl-concurrency` | `4` | curl fetch concurrency |
+| `--playwright-concurrency` | `3` | Playwright fetch concurrency setting |
+| `--checkpoint-every` | `50` | Legacy JSON checkpoint batch size |
+| `--flush-every` | `100` | Durable writer batch setting |
+| `--resume` | `true` | Resume checkpoints/state |
+| `--clean-run` | `false` | Clear checkpoints/state and disable resume |
+| `--force-resume` | `false` | Allow SQLite resume after config hash mismatch |
+| `--output-dir` | `data/output` | Final output directory |
+| `--debug` | `false` | Enable debug behavior |
+| `--save-debug-artifacts` | `false` | Save failure HTML/screenshots |
+| `--user-data-dir` | empty | Optional persistent Playwright profile directory |
+| `--storage-state` | empty | Optional Playwright storage state JSON |
+| `--min-delay` / `--max-delay` | `2.0` / `5.0` | Polite delay range |
+| `--max-retries` | `3` | Navigation/fetch retry count |
 
-`.env.example` documents matching environment variables.
-
-## Outputs
-
-Raw and processed data:
+## Output Files
 
 ```text
 data/raw/vendors_raw.csv
@@ -131,36 +172,94 @@ data/processed/cars_processed.csv
 data/processed/cars_processed.json
 data/output/errors.csv
 data/output/errors.json
-```
-
-Final deliverables:
-
-```text
 data/output/mobile_de_nrw_dashboard.xlsx
 data/output/mobile_de_nrw_report.docx
 ```
 
-Required Excel sheets:
+Excel sheets include:
 
-1. `Vendors_Raw`
-2. `Cars_Raw`
-3. `Cars_Processed`
-4. `Vendor_Summary`
-5. `Manufacturer_Summary`
-6. `Category_Summary`
-7. `Best_Deals`
-8. `Worst_Deals`
-9. `Efficient_Vehicles`
-10. `Dashboard`
+- `Vendors`
+- `Vehicles`
+- `Vendors_Raw`
+- `Cars_Raw`
+- `Cars_Processed`
+- `Run_Summary`
+- `Data_Coverage`
+- `Errors`
+- `Dashboard`
+- `Vendor_Summary`
+- `Manufacturer_Summary`
+- `Category_Summary`
+- `Best_Deals`
+- `Worst_Deals`
+- `Efficient_Vehicles`
+- `Classification_Summary`
+- `Category_By_Manufacturer`
+- `Origin_Summary`
 
-The workbook also includes `Category_By_Manufacturer` and `Origin_Summary` for additional dashboard context.
+## Required Schema
+
+Vendor output always includes the required task columns: `Händler ID`,
+`Händlername`, `Standort`, `PLZ`, `Städte`, `Bundesland`, `Land`, phone/fax/email
+fields, `Hauptseite`, `Mobile.de_Links`, and `Anzahl der Fahrzeuge`.
+
+Vehicle output always includes the required task columns: dealer identifiers,
+make/model/type/status/registration/mileage/fuel/CO2/price/power/seats/gearbox,
+emissions class, color, series, trim, displacement, doors, owners, `Finanzierung`,
+`Financing`, bank/intermediary, financing amounts/rates, duration, and traceability
+columns such as `source_vendor_url`, `source_vehicle_url`, `fetch_strategy`,
+`fetch_status`, `parse_status`, `vehicle_data_source`, `scraped_at`, and `run_id`.
+
+## Classification Rules
+
+Vehicle categories are exactly:
+
+- `PKW`
+- `Motorrad`
+- `Freizeitfahrzeuge`
+- `LKW`
+- `Andere`
+
+Classification metadata columns include `raw_vehicle_type`,
+`normalized_vehicle_type`, `vehicle_category`,
+`vehicle_category_confidence`, and `vehicle_category_rule`.
+
+Manufacturer origins are exactly:
+
+- `Deutschland`
+- `Italien`
+- `Korea`
+- `Japan`
+- `Frankreich`
+- `Andere`
+
+Manufacturer grouping follows the task-defined categories, not historical/legal
+corporate-origin definitions. For example, Ford and Volvo are assigned to
+Deutschland because they are listed under Deutschland in the assignment.
+
+## Dashboard Methodology
+
+The dashboard reports top/least vendors, best/worst deal candidates, efficient
+vehicles, manufacturer summaries, origin summaries, and top category/manufacturer
+combinations. Ranking is heuristic and explainable: score columns expose price,
+mileage, age, CO2, performance/price-per-kW, confidence, and the number of fields
+available. Missing values are not fabricated; rows with too little information are
+excluded from ranked tables or receive lower confidence.
+
+## Limitations
+
+The scraper uses responsible browser automation and does not require authentication
+or private endpoints. If a page is unavailable, the run records the failure reason
+and continues with measurable coverage where possible. Financing, email, phone, and
+detail-page technical fields only appear when the public source exposes them.
+
+For production-grade contractual data access, an authorized API/data partnership
+would be preferable. This assignment focuses on publicly visible website extraction
+as requested.
 
 ## Tests
 
 ```bash
-python -m pytest tests -q
+python -m pytest -q
 ```
 
-## Notes on Blocking
-
-mobile.de may return `HTTP 403: access denied by site protection` to automated browsers, especially headless Chromium. This project records that condition in `data/output/errors.csv`, avoids bypass attempts, and can restart once in visible mode to collect legitimate deliverable data. Vehicle detail pages can also return temporary 5xx/site-protection responses; after the configured threshold, the scraper continues from structured dealer-listing payloads instead of inventing missing values.

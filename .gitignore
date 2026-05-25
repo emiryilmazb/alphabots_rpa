@@ -20,3 +20,14 @@ data/processed/*
 !data/processed/.gitkeep
 data/raw/*
 !data/raw/.gitkeep
+data/debug/*
+!data/debug/.gitkeep
+data/state/*
+!data/state/.gitkeep
+data/browser_profile/*
+!data/browser_profile/.gitkeep
+data/browser_state/*
+!data/browser_state/.gitkeep
+
+# DELETE BEFORE COMMITTING
+*/graphify-out/*

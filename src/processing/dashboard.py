@@ -14,8 +14,8 @@ def prepare_dashboard(df_v: pd.DataFrame, df_c: pd.DataFrame) -> dict[str, pd.Da
     result: dict[str, pd.DataFrame] = {}
     result["vendor_summary"] = _vendor_summary(df_v, df_c)
     result["manufacturer_summary"] = _value_summary(df_c, "Markes", "Manufacturer")
-    result["category_summary"] = _value_summary(df_c, "Fahrzeug_Klasse", "Category")
-    result["origin_summary"] = _value_summary(df_c, "Herkunftsland", "Origin")
+    result["category_summary"] = _value_summary(df_c, _first_existing(df_c, ["vehicle_category", "Fahrzeug_Klasse"]), "Category")
+    result["origin_summary"] = _value_summary(df_c, _first_existing(df_c, ["manufacturer_origin", "Herkunftsland"]), "Origin")
     result["category_manufacturer_summary"] = _category_by_manufacturer(df_c)
     result["best_deals"] = _compute_deals(df_c, best=True)
     result["worst_deals"] = _compute_deals(df_c, best=False)
@@ -44,7 +44,9 @@ def _vendor_summary(df_v: pd.DataFrame, df_c: pd.DataFrame) -> pd.DataFrame:
         scraped = df_c.groupby("Händler ID").size().reset_index(name="Scraped_Vehicle_Count")
 
     vendors = vendors.merge(scraped, on="Händler ID", how="left")
-    vendors["Scraped_Vehicle_Count"] = vendors["Scraped_Vehicle_Count"].fillna(0).astype(int)
+    vendors["Scraped_Vehicle_Count"] = pd.to_numeric(
+        vendors["Scraped_Vehicle_Count"], errors="coerce"
+    ).fillna(0).astype(int)
     vendors["Total_Vehicle_Count"] = pd.to_numeric(
         vendors.get("Anzahl der Fahrzeuge"), errors="coerce"
     ).fillna(vendors["Scraped_Vehicle_Count"])
@@ -59,7 +61,8 @@ def _value_summary(df: pd.DataFrame, source_col: str, out_col: str) -> pd.DataFr
     columns = [out_col, "Count", "Share"]
     if df.empty or source_col not in df.columns:
         return pd.DataFrame(columns=columns)
-    series = df[source_col].replace("", pd.NA).fillna("Unknown")
+    fallback = "Andere" if out_col in {"Category", "Origin"} else "Unknown"
+    series = df[source_col].replace("", pd.NA).fillna(fallback)
     table = series.value_counts(dropna=False).reset_index()
     table.columns = [out_col, "Count"]
     total = table["Count"].sum()
@@ -69,17 +72,18 @@ def _value_summary(df: pd.DataFrame, source_col: str, out_col: str) -> pd.DataFr
 
 def _category_by_manufacturer(df: pd.DataFrame) -> pd.DataFrame:
     columns = ["Manufacturer", "Category", "Count"]
-    required = {"Markes", "Fahrzeug_Klasse"}
+    category_col = _first_existing(df, ["vehicle_category", "Fahrzeug_Klasse"])
+    required = {"Markes", category_col}
     if df.empty or not required.issubset(df.columns):
         return pd.DataFrame(columns=columns)
     work = df.copy()
     work["Markes"] = work["Markes"].replace("", pd.NA).fillna("Unknown")
-    work["Fahrzeug_Klasse"] = work["Fahrzeug_Klasse"].replace("", pd.NA).fillna("Andere")
+    work[category_col] = work[category_col].replace("", pd.NA).fillna("Andere")
     return (
-        work.groupby(["Markes", "Fahrzeug_Klasse"])
+        work.groupby(["Markes", category_col])
         .size()
         .reset_index(name="Count")
-        .rename(columns={"Markes": "Manufacturer", "Fahrzeug_Klasse": "Category"})
+        .rename(columns={"Markes": "Manufacturer", category_col: "Category"})
         .sort_values(["Manufacturer", "Count"], ascending=[True, False])
         .reset_index(drop=True)
     )
@@ -116,9 +120,21 @@ def _compute_deals(df: pd.DataFrame, *, best: bool) -> pd.DataFrame:
         ("price_per_kw", pd.to_numeric(work.get("Preis_pro_kW"), errors="coerce"), True),
         ("co2", pd.to_numeric(work.get("CO2_gkm"), errors="coerce"), True),
     ]
+    component_map = {
+        "price": "price_score",
+        "mileage": "mileage_score",
+        "registration_year": "age_score",
+        "price_per_kw": "performance_score",
+        "co2": "co2_score",
+    }
+    for name, series, lower_is_better in metrics:
+        work[component_map[name]] = _normalized_metric(series, lower_is_better)
     score, count = _weighted_score(metrics)
     work["Deal_Score"] = score
+    work["deal_score"] = score
     work["Metric_Count"] = count
+    work["score_available_fields"] = count
+    work["score_confidence"] = (count / len(metrics)).round(2)
     work["Metric_Definition"] = (
         "lower price, lower mileage, newer first registration, lower price/kW, lower CO2"
     )
@@ -155,9 +171,20 @@ def _compute_efficient(df: pd.DataFrame) -> pd.DataFrame:
         ("price", pd.to_numeric(work.get("Preis_EUR"), errors="coerce"), True),
         ("registration_year", pd.to_numeric(work.get("EZ_Jahr"), errors="coerce"), False),
     ]
+    component_map = {
+        "co2": "co2_score",
+        "mileage": "mileage_score",
+        "price": "price_score",
+        "registration_year": "age_score",
+    }
+    for name, series, lower_is_better in metrics:
+        work[component_map[name]] = _normalized_metric(series, lower_is_better)
     score, count = _weighted_score(metrics)
     work["Efficiency_Score"] = score
+    work["efficiency_score"] = score
     work["Metric_Count"] = count
+    work["score_available_fields"] = count
+    work["score_confidence"] = (count / len(metrics)).round(2)
     work["Metric_Definition"] = (
         "low CO2, low mileage, reasonable price, newer first registration; "
         "fuel consumption is used only if present in source data"
@@ -185,7 +212,8 @@ def _weighted_score(metrics: list[tuple[str, pd.Series, bool]]) -> tuple[pd.Seri
         score.loc[mask] += contribution
         count.loc[mask] += 1
 
-    score = score / count.replace(0, pd.NA)
+    denominator = count.astype("float64").replace(0, float("nan"))
+    score = (score / denominator).astype("float64")
     return score, count
 
 
@@ -195,3 +223,21 @@ def _normalize(series: pd.Series) -> pd.Series:
     if pd.isna(minimum) or pd.isna(maximum) or maximum == minimum:
         return pd.Series(0.5, index=series.index)
     return (series - minimum) / (maximum - minimum)
+
+
+def _normalized_metric(series: pd.Series, lower_is_better: bool) -> pd.Series:
+    series = pd.to_numeric(series, errors="coerce")
+    result = pd.Series(pd.NA, index=series.index, dtype="Float64")
+    mask = series.notna()
+    if not mask.any():
+        return result
+    normalized = _normalize(series[mask])
+    result.loc[mask] = normalized if lower_is_better else 1 - normalized
+    return result
+
+
+def _first_existing(df: pd.DataFrame, columns: list[str]) -> str:
+    for column in columns:
+        if column in df.columns:
+            return column
+    return columns[-1]

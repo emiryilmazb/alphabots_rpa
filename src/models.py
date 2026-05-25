@@ -47,6 +47,7 @@ VEHICLE_COLUMNS = [
     "Hubraum",
     "Anzahl der Türen",
     "Anzahl der Fahrzeughalter",
+    "Finanzierung",
     "Financing",
     "Bank",
     "Darlehensvermittler",
@@ -60,7 +61,39 @@ VEHICLE_COLUMNS = [
     "Gesamtbetrag",
     "Laufzeit",
     "Vehicle_URL",
+    "source_vendor_url",
+    "source_vehicle_url",
+    "source_category",
+    "source_category_label",
+    "source_category_url",
+    "fetch_strategy",
+    "fetch_status",
+    "parse_status",
+    "vehicle_data_source",
+    "scraped_at",
+    "run_id",
 ]
+
+
+SOURCE_METADATA_COLUMNS = [
+    "source_vendor_url",
+    "source_vehicle_url",
+    "source_category",
+    "source_category_label",
+    "source_category_url",
+    "fetch_strategy",
+    "fetch_status",
+    "parse_status",
+    "vehicle_data_source",
+    "scraped_at",
+    "run_id",
+]
+
+
+def validate_required_columns(df, expected_columns: list[str]) -> list[str]:
+    """Return required columns that are missing from a DataFrame-like object."""
+    columns = set(getattr(df, "columns", []))
+    return [column for column in expected_columns if column not in columns]
 
 
 class VendorData(BaseModel):
@@ -131,6 +164,7 @@ class VehicleData(BaseModel):
     anzahl_der_fahrzeughalter: str = Field("", alias="Anzahl der Fahrzeughalter")
 
     # Financing fields (flattened)
+    finanzierung: str = Field("", alias="Finanzierung")
     financing: str = Field("", alias="Financing")
     bank: str = Field("", alias="Bank")
     darlehensvermittler: str = Field("", alias="Darlehensvermittler")
@@ -146,5 +180,13 @@ class VehicleData(BaseModel):
 
     # Internal tracking
     vehicle_url: str = Field("", alias="Vehicle_URL")
+    source_vendor_url: str = Field("", alias="source_vendor_url")
+    source_vehicle_url: str = Field("", alias="source_vehicle_url")
+    fetch_strategy: str = Field("", alias="fetch_strategy")
+    fetch_status: str = Field("", alias="fetch_status")
+    parse_status: str = Field("", alias="parse_status")
+    vehicle_data_source: str = Field("", alias="vehicle_data_source")
+    scraped_at: str = Field("", alias="scraped_at")
+    run_id: str = Field("", alias="run_id")
 
     model_config = ConfigDict(populate_by_name=True)

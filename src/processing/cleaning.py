@@ -52,6 +52,10 @@ def _clean_cars(df: pd.DataFrame) -> pd.DataFrame:
     for col in df.select_dtypes(include=["object"]).columns:
         df[col] = df[col].map(_normalize_string)
 
+    if "Finanzierung" in df.columns and "Financing" in df.columns:
+        df["Finanzierung"] = df["Finanzierung"].where(df["Finanzierung"].astype(str).str.strip() != "", df["Financing"])
+        df["Financing"] = df["Financing"].where(df["Financing"].astype(str).str.strip() != "", df["Finanzierung"])
+
     # ── Price → numeric EUR ─────────────────────────────────────────────
     df["Preis_EUR"] = df["Preis"].apply(_parse_price)
 
@@ -79,6 +83,7 @@ def _clean_cars(df: pd.DataFrame) -> pd.DataFrame:
 
     # ── Registration year → numeric ─────────────────────────────────────
     df["EZ_Jahr"] = df["Erstzulassung"].apply(_parse_registration_year)
+    df["EZ_Monat"] = df["Erstzulassung"].apply(_parse_registration_month)
 
     # ── Financing amounts → numeric ─────────────────────────────────────
     df["Fahrzeugpreis_EUR"] = df["Fahrzeugpreis"].apply(_parse_price)
@@ -93,6 +98,22 @@ def _clean_cars(df: pd.DataFrame) -> pd.DataFrame:
 
     # ── Duration → numeric months ───────────────────────────────────────
     df["Laufzeit_Monate"] = df["Laufzeit"].apply(_parse_duration_months)
+
+    # Stable English/snake_case aliases used by tests, dashboards, and downstream tools.
+    df["price_eur"] = df["Preis_EUR"]
+    df["mileage_km"] = df["Kilometerstand_km"]
+    df["co2_g_km"] = df["CO2_gkm"]
+    df["power_kw"] = df["Leistung_kW"]
+    df["power_ps"] = df["Leistung_PS"]
+    df["displacement_cc"] = df["Hubraum_ccm"]
+    df["first_registration_month"] = df["EZ_Monat"]
+    df["first_registration_year"] = df["EZ_Jahr"]
+    df["borrowing_rate_pct"] = df["Sollzins_pct"]
+    df["annual_interest_pct"] = df["EffJahreszins_pct"]
+    df["total_interest_eur"] = df["Gesamtzins_EUR"]
+    df["total_amount_eur"] = df["Gesamtbetrag_EUR"]
+    df["duration_months"] = df["Laufzeit_Monate"]
+    df["Financing_Available"] = df.apply(_financing_available, axis=1)
 
     # ── Derived metrics ─────────────────────────────────────────────────
     # Price per kW
@@ -249,6 +270,17 @@ def _parse_registration_year(text: str) -> int | None:
     return None
 
 
+def _parse_registration_month(text: str) -> int | None:
+    """Extract month from registration date like '03/2024' → 3."""
+    text = _normalize_string(text)
+    if not text:
+        return None
+    m = re.search(r"\b(0?[1-9]|1[0-2])[/.-]\d{4}\b", text)
+    if m:
+        return int(m.group(1))
+    return None
+
+
 def _parse_duration_months(text: str) -> int | None:
     """Parse duration like '60 Months' or '60 Monate' → 60."""
     text = _normalize_string(text)
@@ -258,3 +290,24 @@ def _parse_duration_months(text: str) -> int | None:
     if m:
         return int(m.group(1))
     return None
+
+
+def _financing_available(row: pd.Series) -> str:
+    financing_fields = [
+        "Finanzierung",
+        "Financing",
+        "Bank",
+        "Darlehensvermittler",
+        "Fahrzeugpreis",
+        "Anzahlung",
+        "Schlussrate",
+        "Fester Sollzins p.a.",
+        "Effektiver Jahreszins",
+        "Gesamtzins",
+        "Gesamtbetrag",
+        "Laufzeit",
+    ]
+    for field in financing_fields:
+        if field in row.index and _normalize_string(row.get(field, "")):
+            return "Yes"
+    return "No"

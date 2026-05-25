@@ -21,11 +21,16 @@ def generate_word_report(
     dashboard: dict[str, pd.DataFrame],
     state: str,
     errors: list[dict] | None = None,
+    *,
+    run_summary: dict | None = None,
+    vendor_coverage: pd.DataFrame | None = None,
+    vehicle_coverage: pd.DataFrame | None = None,
 ) -> None:
     """Generate the required Word report document."""
     logger.info("Generating Word report: %s", path)
     path.parent.mkdir(parents=True, exist_ok=True)
     errors = errors or []
+    run_summary = run_summary or {}
 
     doc = Document()
     title = doc.add_heading("Alphabots GmbH - Mobile.de Data Analysis Report", 0)
@@ -57,9 +62,9 @@ def generate_word_report(
         f"Vehicles in this run: {len(df_cars)}"
     )
 
-    _section(doc, "3. Scraping Methodology")
+    _section(doc, "3. Extraction Methodology")
     steps = [
-        "Use Playwright Chromium to load JavaScript-rendered regional, dealer, and vehicle pages.",
+        "Use Playwright or curl_cffi through a standard fetch abstraction. Static HTML is attempted first where safe; browser rendering remains available for JavaScript-rendered pages.",
         "Accept the mobile.de cookie consent dialog when it appears.",
         "Paginate the regional state directory and collect dealer homepage links.",
         "Deduplicate vendors by normalized mobile.de dealer URL and assign stable C0000001-style IDs after alphabetic URL sorting.",
@@ -67,13 +72,21 @@ def generate_word_report(
         "Open contact, Über uns, and Impressum sections where present and reveal phone numbers only through visible site controls.",
         "Traverse the known mobile.de vehicle categories for each dealer, including Pkw, Motorräder, Wohnmobile, Lkw, Sattelzugmaschinen, Auflieger, Anhänger, Baumaschinen, Busse, Agrarfahrzeuge, and Stapler.",
         "Collect vehicle records from rendered listing cards and structured searchResults/listing payloads, then paginate dealer inventory pages.",
-        "Visit individual vehicle detail pages where access is allowed and extract technical, price, and financing fields when present; if detail pages are blocked, continue with structured dealer-listing payload data.",
-        "Persist checkpoints and raw CSV/JSON files so interrupted runs can resume without duplicating work.",
+        "Visit individual vehicle detail pages according to the configured detail policy and extract technical, price, and financing fields when present.",
+        "Persist checkpoints and optional SQLite state so interrupted runs can resume without duplicating completed work.",
     ]
     for step in steps:
         doc.add_paragraph(step, style="List Number")
 
-    _section(doc, "4. Fields Collected")
+    _section(doc, "4. Headless and Cloud Execution")
+    doc.add_paragraph(
+        "The scraper supports local headed execution, strict headless execution, Firefox/Chrome selection, "
+        "and Docker/Linux server execution with Xvfb. Strict headless mode is supported where the website "
+        "serves the page normally. If a page is unavailable or returns access denied, the failure is recorded "
+        "with status/debug metadata and reflected in coverage metrics."
+    )
+
+    _section(doc, "5. Fields Collected")
     _bullets(
         doc,
         [
@@ -82,19 +95,40 @@ def generate_word_report(
         ],
     )
 
-    _section(doc, "5. Preprocessing and Classification Logic")
+    _section(doc, "6. Preprocessing Methodology")
     _bullets(
         doc,
         [
             "Whitespace is trimmed and Unicode text is normalized without transliterating German umlauts.",
             "Prices are parsed to EUR, mileage to km, CO2 to g/km, power to kW and PS, displacement to cm3, durations to months, and interest rates to numeric percentages.",
-            "Vehicle type is mapped to PKW, Motorrad, Freizeitfahrzeuge, LKW, or Andere using the task mapping.",
-            "Manufacturer origin is mapped to Deutschland, Italien, Korea, Japan, Frankreich, or Other/Unknown while preserving the original manufacturer text.",
+            "German-formatted prices, mileage, CO2, power, displacement, percentages, first registration, and financing durations are parsed into numeric columns while raw human-readable columns are kept.",
             "Missing fields remain empty; no values are invented or inferred beyond the documented numeric parsing and classifications.",
         ],
     )
 
-    _section(doc, "6. Dashboard Metric Definitions")
+    _section(doc, "7. Vehicle Category Classification Rules")
+    doc.add_paragraph(
+        "Vehicle type is mapped to PKW, Motorrad, Freizeitfahrzeuge, LKW, or Andere using the task mapping. "
+        "The final category is accompanied by raw_vehicle_type, normalized_vehicle_type, confidence, and rule metadata. "
+        "Unknown or unmapped values are assigned to Andere."
+    )
+
+    _section(doc, "8. Manufacturer Origin Classification Rules")
+    doc.add_paragraph(
+        "Manufacturer grouping follows the task-defined categories, not historical/legal corporate-origin definitions. "
+        "For example, Ford and Volvo are assigned to Deutschland because they are listed under Deutschland in the task description. "
+        "The final origin is accompanied by raw_manufacturer, normalized_manufacturer, confidence, and rule metadata."
+    )
+
+    _section(doc, "9. Data Completeness / Coverage")
+    doc.add_paragraph(
+        "The project guarantees schema completeness and processing traceability. Source completeness is measured through coverage metrics."
+    )
+    doc.add_paragraph("Unavailable source values are not guessed.")
+    doc.add_paragraph("Schema completeness is guaranteed; source completeness is measured.")
+    _add_coverage_summary(doc, vendor_coverage, vehicle_coverage)
+
+    _section(doc, "10. Dashboard Metrics Explanation")
     _bullets(
         doc,
         [
@@ -105,14 +139,15 @@ def generate_word_report(
         ],
     )
 
-    _section(doc, "7. Key Findings")
+    _section(doc, "11. Summary of Key Findings")
     _add_key_findings(doc, dashboard)
 
-    _section(doc, "8. Limitations")
+    _section(doc, "12. Limitations")
     limitations = [
-        "mobile.de may return access-denied pages or CAPTCHA-style protections during automated scraping. The scraper does not bypass CAPTCHA or login-required controls.",
-        "Headless Chromium may be denied by mobile.de site protection. When configured, the scraper restarts once in headed mode instead of fabricating data.",
-        "Vehicle detail pages may return temporary 5xx/site-protection responses. After repeated failures, the scraper disables further detail-page requests and uses structured listing payloads to preserve progress.",
+        "The scraper uses responsible browser automation and does not require authentication or private endpoints.",
+        "If a page is unavailable or returns access denied, the failure is recorded and reflected in coverage metrics.",
+        "For production-grade contractual data access, an authorized API/data partnership would be preferable. This assignment focuses on publicly visible website extraction as requested.",
+        "Vehicle detail pages may return temporary 5xx/site-protection responses. After repeated failures, the scraper can continue from structured listing payloads to preserve progress.",
         "Dealer phone numbers and email addresses may be missing if the dealer does not publish them or if a reveal/contact section cannot be opened.",
         "Financing fields are only populated when a listing exposes financing information.",
         "Vehicle detail page layouts vary by vehicle category, so parsers use multiple robust fallbacks but still leave absent fields empty.",
@@ -124,7 +159,7 @@ def generate_word_report(
         limitations.append(f"This run recorded {len(errors)} scraping/runtime errors; see errors.csv/json in the output folder.")
     _bullets(doc, limitations)
 
-    _section(doc, "9. Assumptions")
+    _section(doc, "13. Assumptions")
     _bullets(
         doc,
         [
@@ -136,17 +171,23 @@ def generate_word_report(
         ],
     )
 
-    _section(doc, "10. Output File Descriptions")
+    _section(doc, "14. Output File Descriptions")
     _bullets(
         doc,
         [
             "data/raw/vendors_raw.csv and vendors_raw.json: raw vendor records after dealer scraping.",
             "data/raw/cars_raw.csv and cars_raw.json: raw vehicle records after vehicle detail scraping.",
             "data/processed/cars_processed.csv: cleaned and classified vehicle data.",
-            "data/output/mobile_de_nrw_dashboard.xlsx: required workbook with raw, processed, summary, ranking, and dashboard sheets.",
+            "data/output/mobile_de_nrw_dashboard.xlsx: required workbook with raw, processed, run summary, data coverage, error, ranking, and dashboard sheets.",
             "data/output/mobile_de_nrw_report.docx: this methodology and findings report.",
         ],
     )
+
+    if run_summary:
+        _section(doc, "15. Run Summary")
+        for key in ["run_id", "started_at_utc", "finished_at_utc", "duration_seconds", "vendors", "vehicles_raw", "errors"]:
+            if key in run_summary:
+                doc.add_paragraph(f"{key}: {run_summary[key]}")
 
     doc.save(str(path))
     logger.info("Word report saved: %s", path)
@@ -218,3 +259,20 @@ def _add_key_findings(doc: Document, dashboard: dict[str, pd.DataFrame]) -> None
             f"Top efficient vehicle candidate: {row.get('Markes', '')} {row.get('Models', '')} "
             f"with CO2 value {row.get('CO₂-Emissionen', '')}."
         )
+
+
+def _add_coverage_summary(
+    doc: Document,
+    vendor_coverage: pd.DataFrame | None,
+    vehicle_coverage: pd.DataFrame | None,
+) -> None:
+    rows: list[str] = []
+    for label, coverage in [("Vendor", vendor_coverage), ("Vehicle", vehicle_coverage)]:
+        if coverage is None or coverage.empty or "coverage_pct" not in coverage.columns:
+            continue
+        average = pd.to_numeric(coverage["coverage_pct"], errors="coerce").mean()
+        rows.append(f"{label} field coverage average: {average:.1f}%.")
+    if rows:
+        _bullets(doc, rows)
+    else:
+        doc.add_paragraph("No coverage metrics were available for this run.")
