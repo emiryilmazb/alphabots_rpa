@@ -40,7 +40,7 @@ class FakeFetcher:
         self.result = result
         self.calls = 0
 
-    async def fetch(self, url: str, *, attempt: int = 1) -> FetchResult:
+    async def fetch(self, url: str, *, attempt: int = 1, **kwargs) -> FetchResult:
         self.calls += 1
         self.result.attempt = attempt
         return self.result
@@ -51,8 +51,14 @@ class FakeBrowserFailure:
     last_error = "Service unavailable"
     last_screenshot_path = "debug/page.png"
     last_html_dump_path = "debug/page.html"
+    started = 0
+    last_safe_goto_kwargs = {}
 
-    async def safe_goto(self, url: str) -> bool:
+    async def ensure_started(self):
+        self.started += 1
+
+    async def safe_goto(self, url: str, **kwargs) -> bool:
+        self.last_safe_goto_kwargs = kwargs
         return False
 
 
@@ -159,9 +165,10 @@ def test_strategy_manager_does_not_fallback_when_static_validation_passes():
 
 
 def test_playwright_fetcher_failure_includes_debug_metadata():
-    fetcher = PlaywrightFetcher(ScraperConfig(browser="chromium"), FakeBrowserFailure())
+    browser = FakeBrowserFailure()
+    fetcher = PlaywrightFetcher(ScraperConfig(browser="chromium"), browser)
 
-    result = asyncio.run(fetcher.fetch("https://example.test"))
+    result = asyncio.run(fetcher.fetch("https://example.test", max_retries=1))
 
     assert result.strategy == "playwright_chromium"
     assert result.status_code == 503
@@ -169,6 +176,7 @@ def test_playwright_fetcher_failure_includes_debug_metadata():
     assert result.error_message == "Service unavailable"
     assert result.screenshot_path == "debug/page.png"
     assert result.html_dump_path == "debug/page.html"
+    assert browser.last_safe_goto_kwargs["max_retries"] == 1
 
 
 def test_static_validation_rejects_dynamic_or_blocked_html():
@@ -187,3 +195,39 @@ def test_static_validation_rejects_dynamic_or_blocked_html():
 
     assert FetchStrategyManager.validate_static_html(blocked).ok is False
     assert FetchStrategyManager.validate_static_html(dynamic).ok is False
+
+
+def test_curl_fetcher_short_circuits_after_module_not_found():
+    """After first ModuleNotFoundError, CurlFetcher returns immediately without re-trying import."""
+
+    _call_count = 0
+
+    def _broken_session_factory():
+        nonlocal _call_count
+        _call_count += 1
+        raise ModuleNotFoundError("No module named 'curl_cffi'")
+
+    # Reset class state
+    CurlFetcher._curl_cffi_available = None
+
+    fetcher = CurlFetcher(
+        ScraperConfig(fetch_strategy="auto"),
+        session_factory=_broken_session_factory,
+    )
+
+    # First call: hits the import → sets flag
+    r1 = asyncio.run(fetcher.fetch("https://example.test/1"))
+    assert r1.error_type == "ModuleNotFoundError"
+    assert CurlFetcher._curl_cffi_available is False
+    assert _call_count == 1
+
+    # Second call: short-circuits immediately (no import attempt)
+    # Need a fetcher WITHOUT custom session_factory to test the short-circuit path
+    fetcher2 = CurlFetcher(ScraperConfig(fetch_strategy="auto"))
+    r2 = asyncio.run(fetcher2.fetch("https://example.test/2"))
+    assert r2.error_type == "ModuleNotFoundError"
+    assert r2.elapsed_ms == 0  # short-circuit returns 0 elapsed
+    assert _call_count == 1  # no additional factory calls
+
+    # Cleanup: reset class state for other tests
+    CurlFetcher._curl_cffi_available = None

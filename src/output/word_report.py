@@ -11,6 +11,8 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, RGBColor
 
+from src.models import LOW_SOURCE_COVERAGE_FIELDS
+
 logger = logging.getLogger("mobile_de.word")
 
 
@@ -91,7 +93,7 @@ def generate_word_report(
         doc,
         [
             "Vendor fields: Händler ID, Händlername, Standort, PLZ, Städte, Bundesland, Land, telephone numbers, fax, email, homepage, mobile.de link, and total vehicle count.",
-            "Vehicle fields: Händler ID, Händlername, PLZ, Markes, Models, Fahrzeugtyp, Zustand, Erstzulassung, Kilometerstand, Kraftstoffart, CO2, Preis, Leistung, seats, gearbox, emissions class, color, series, trim, displacement, doors, owners, and financing fields.",
+            "Vehicle columns and extractors cover Händler ID, Händlername, PLZ, Markes, Models, Fahrzeugtyp, Zustand, Erstzulassung, Kilometerstand, Kraftstoffart, CO2, Preis, Leistung, seats, gearbox, emissions class, color, series, trim, displacement, doors, owners, and financing fields; source coverage is measured per run.",
         ],
     )
 
@@ -126,7 +128,11 @@ def generate_word_report(
     )
     doc.add_paragraph("Unavailable source values are not guessed.")
     doc.add_paragraph("Schema completeness is guaranteed; source completeness is measured.")
+    doc.add_paragraph(
+        "Some vehicle detail fields such as CO₂-Emissionen, Baureihe, Ausstattungslinie, and Anzahl der Fahrzeughalter showed low source coverage because mobile.de detail pages returned site-side 403/503 responses. These values are not guessed and are reported transparently in Data_Coverage and Requirements_Compliance."
+    )
     _add_coverage_summary(doc, vendor_coverage, vehicle_coverage)
+    _add_low_coverage_fields(doc, vehicle_coverage)
 
     _section(doc, "10. Dashboard Metrics Explanation")
     _bullets(
@@ -148,6 +154,7 @@ def generate_word_report(
         "If a page is unavailable or returns access denied, the failure is recorded and reflected in coverage metrics.",
         "For production-grade contractual data access, an authorized API/data partnership would be preferable. This assignment focuses on publicly visible website extraction as requested.",
         "Vehicle detail pages may return temporary 5xx/site-protection responses. After repeated failures, the scraper can continue from structured listing payloads to preserve progress.",
+        "Listing payload extractors exist for detail-oriented fields, but CO2-Emissionen, Baureihe, Ausstattungslinie, and Anzahl der Fahrzeughalter remain schema-only when the source payload and detail page do not expose values.",
         "Dealer phone numbers and email addresses may be missing if the dealer does not publish them or if a reveal/contact section cannot be opened.",
         "Financing fields are only populated when a listing exposes financing information.",
         "Vehicle detail page layouts vary by vehicle category, so parsers use multiple robust fallbacks but still leave absent fields empty.",
@@ -178,14 +185,54 @@ def generate_word_report(
             "data/raw/vendors_raw.csv and vendors_raw.json: raw vendor records after dealer scraping.",
             "data/raw/cars_raw.csv and cars_raw.json: raw vehicle records after vehicle detail scraping.",
             "data/processed/cars_processed.csv: cleaned and classified vehicle data.",
-            "data/output/mobile_de_nrw_dashboard.xlsx: required workbook with raw, processed, run summary, data coverage, error, ranking, and dashboard sheets.",
+            "data/output/mobile_de_nrw_dashboard.xlsx: required workbook with raw, processed, run summary, data coverage, requirements compliance, error, ranking, and dashboard sheets.",
             "data/output/mobile_de_nrw_report.docx: this methodology and findings report.",
         ],
     )
 
     if run_summary:
         _section(doc, "15. Run Summary")
-        for key in ["run_id", "started_at_utc", "finished_at_utc", "duration_seconds", "vendors", "vehicles_raw", "errors"]:
+        summary_keys = [
+            "run_id",
+            "started_at_utc",
+            "finished_at_utc",
+            "duration_seconds",
+            "target_state",
+            "target_state_slug",
+            "search_state",
+            "pipeline_mode",
+            "browser_mode",
+            "strict_headless_blocked",
+            "processed_vendor_count",
+            "extracted_vehicle_count",
+            "error_count",
+            "vehicle_detail_jobs_total",
+            "detail_needed_count",
+            "detail_skipped_count",
+            "detail_attempted_count",
+            "detail_success_count",
+            "detail_failed_count",
+            "listing_fallback_used_count",
+            "detail_fetch_403_count",
+            "detail_fetch_503_count",
+            "detail_fetch_failed_count",
+            "detail_site_blocked_or_503_count",
+            "vendor_required_fields_coverage_pct",
+            "vehicle_basic_fields_coverage_pct",
+            "vehicle_technical_fields_coverage_pct",
+            "financing_fields_coverage_pct",
+            "classification_fields_coverage_pct",
+            "final_required_fields_coverage_pct",
+            "cookie_modal_visible_count",
+            "cookie_consent_click_count",
+            "cookie_modal_remaining_count",
+            "playwright_browser_opened_count",
+            "regional_browser_opened_count",
+            "vendor_browser_opened_count",
+            "vehicle_detail_browser_opened_count",
+            "idle_about_blank_count",
+        ]
+        for key in summary_keys:
             if key in run_summary:
                 doc.add_paragraph(f"{key}: {run_summary[key]}")
 
@@ -276,3 +323,21 @@ def _add_coverage_summary(
         _bullets(doc, rows)
     else:
         doc.add_paragraph("No coverage metrics were available for this run.")
+
+
+def _add_low_coverage_fields(doc: Document, vehicle_coverage: pd.DataFrame | None) -> None:
+    if vehicle_coverage is None or vehicle_coverage.empty or "field" not in vehicle_coverage.columns:
+        return
+    coverage = vehicle_coverage.copy()
+    coverage["coverage_pct"] = pd.to_numeric(coverage.get("coverage_pct"), errors="coerce").fillna(0.0)
+    low_source_rows = coverage[
+        coverage["field"].astype(str).isin(LOW_SOURCE_COVERAGE_FIELDS)
+        & (coverage["coverage_pct"] < 25)
+    ]
+    if low_source_rows.empty:
+        return
+    fields = ", ".join(
+        f"{row['field']} ({row['coverage_pct']:.1f}%)"
+        for _, row in low_source_rows.sort_values("field").iterrows()
+    )
+    doc.add_paragraph(f"Low-coverage vehicle detail field group: {fields}.")

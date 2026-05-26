@@ -1,130 +1,78 @@
 # Mobile.de NRW Scraper
 
-Professional Python RPA/web-scraping solution for the Alphabots GmbH developer task.
-The default scope is the public mobile.de regional directory for Nordrhein-Westfalen:
+Python RPA/web-scraping solution for the Alphabots GmbH developer task. The default target is the public mobile.de regional dealer directory for Nordrhein-Westfalen:
 
 ```text
 https://home.mobile.de/regional/nordrhein-westfalen/0.html
 ```
 
-Schema completeness is guaranteed; source completeness is measured. All required
-output columns are created consistently, unavailable source values are left empty,
-and coverage/error sheets explain what was actually available in the source pages.
+The scraper collects dealer data, vehicle listing data, financing data where exposed by mobile.de, classifications, dashboard tables, an Excel workbook, and a Word report. Schema completeness is guaranteed; source completeness is measured. Required output columns are always created, unavailable source values are left empty, and coverage/error sheets explain what was available in the source pages.
 
-## Features
+## Project Overview
 
-- Local, strict headless, Firefox/Chrome, Docker, and Docker/Xvfb execution paths.
-- Playwright browser automation for rendered pages, consent controls, contact sections, and dynamic dealer inventory pages.
-- `curl_cffi` fast static fetcher where safe, with Playwright fallback for dynamic pages.
-- Legacy sequential mode plus SQLite-backed producer-consumer pipeline mode.
-- Bounded vendor and vehicle detail concurrency; no shared Playwright page across concurrent workers.
-- Stable Händler IDs in `C0000001` format, persisted across SQLite resume runs.
-- Batched checkpoints/state storage; full CSV/JSON exports happen at the end, not after every vehicle.
-- Debug HTML and screenshots when enabled.
-- Required Excel workbook and Word report with run summary, data coverage, errors, classification, and dashboard findings.
+- Uses `curl_cffi` for static fetches where reliable and Playwright for rendered pages.
+- Supports local headed execution, Docker/Xvfb server execution, and strict headless mode as a technical option.
+- Uses a SQLite-backed producer-consumer pipeline for bounded vendor and vehicle work.
+- Traverses dealer inventory categories and enforces vendor/car caps for controlled benchmarks.
+- Extracts rich listing-card data from mobile.de Next.js payloads, including many financing fields from listing payloads.
+- Generates raw exports, processed exports, Excel dashboard workbook, Word methodology/report document, and structured error records.
 
-## Architecture
+Strict headless is technically supported but currently blocked by mobile.de in this environment. Docker/Xvfb is the recommended server-compatible execution mode.
 
-```text
-Regional discovery
-  -> vendor jobs / vendors table
-  -> vendor workers collect dealer info and listing cards
-  -> vehicle jobs
-  -> bounded vehicle detail workers
-  -> single SQLite writer
-  -> final raw CSV/JSON, processed CSV/JSON, Excel, Word
-```
+## Setup
 
-Key modules:
+Windows/local setup:
 
-- `src/config.py`: CLI/env configuration.
-- `src/scraper/browser.py`: hardened Playwright lifecycle, browser modes, debug artifacts.
-- `src/scraper/fetchers/`: `FetchResult`, curl fetcher, Playwright fetcher, strategy manager.
-- `src/scraper/state_store.py`: SQLite run, vendor, vehicle job, vehicle, and error state.
-- `src/scraper/pipeline.py`: bounded producer-consumer pipeline.
-- `src/processing/`: cleaning, classification, dashboard scoring.
-- `src/output/`: Excel workbook and Word report generation.
-
-## Installation
-
-```bash
+```powershell
 python -m venv venv
 venv\Scripts\activate
 python -m pip install -r requirements.txt
 python -m playwright install
 ```
 
-On Linux without Docker:
+Linux without Docker:
 
 ```bash
+python -m pip install -r requirements.txt
 python -m playwright install-deps
 python -m playwright install
 ```
 
-## Local Runs
+Docker setup:
 
-Small smoke run:
-
-```bash
-python -m src.main --state nordrhein-westfalen --max-vendors 2 --max-cars-per-vendor 3
+```powershell
+docker compose build scraper
 ```
 
-Strict headless:
+## Recommended Commands
 
-```bash
-python -m src.main --state nordrhein-westfalen --browser-mode headless --max-vendors 10
+Local small test:
+
+```powershell
+venv\Scripts\python.exe -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --browser-mode headed --fetch-strategy auto --detail-policy missing-required --detail-max-retries 1 --max-vendors 5 --max-cars-per-vendor 5 --vendor-concurrency 1 --vehicle-detail-concurrency 2 --benchmark
 ```
 
-Firefox headless:
+Docker/Xvfb server mode:
 
-```bash
-python -m src.main --state nordrhein-westfalen --browser firefox --browser-mode headless --max-vendors 10
+```powershell
+docker compose run --rm -e BROWSER_MODE=xvfb scraper python -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --browser-mode xvfb --fetch-strategy auto --detail-policy missing-required --detail-max-retries 1 --max-vendors 10 --max-cars-per-vendor 5 --vendor-concurrency 1 --vehicle-detail-concurrency 1 --benchmark
 ```
 
-Visible local browser:
+Final larger run, only if approved:
 
-```bash
-python -m src.main --state nordrhein-westfalen --browser-mode headed --max-vendors 10
+```powershell
+docker compose run --rm -e BROWSER_MODE=xvfb scraper python -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --browser-mode xvfb --fetch-strategy auto --detail-policy missing-required --detail-max-retries 1 --vendor-concurrency 1 --vehicle-detail-concurrency 1 --benchmark
 ```
 
-SQLite producer-consumer pipeline:
+Do not use the final larger command as a smoke test. Run capped benchmarks first and inspect the output quality.
 
-```bash
-python -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --vendor-concurrency 2 --vehicle-detail-concurrency 3 --max-vendors 10
-```
+## Execution Modes
 
-Clean run:
+Local headed mode is useful for development and manual validation. It opens a visible Playwright browser and has been used for capped benchmark validation.
 
-```bash
-python -m src.main --state nordrhein-westfalen --clean-run true
-```
+Docker/Xvfb mode is the recommended server-compatible mode. It runs a headed browser under a virtual framebuffer and avoids strict-headless site behavior while still running in Docker/server environments.
 
-## Docker / Cloud
-
-The Docker image version is tied to the Playwright package version in `requirements.txt`.
-
-Strict headless Docker:
-
-```bash
-docker compose up --build
-```
-
-Docker with Xvfb fallback:
-
-```bash
-BROWSER_MODE=xvfb HEADLESS=false docker compose up --build
-```
-
-Linux Xvfb without Docker:
-
-```bash
-xvfb-run -a python -m src.main --state nordrhein-westfalen --browser-mode xvfb --max-vendors 10
-```
-
-Strict headless is supported where the website serves the page normally. If a page is
-unavailable or returns access denied, the run records the failure reason and continues
-with measurable coverage where possible. Docker/Xvfb is the recommended server fallback
-when strict headless rendering is unreliable.
+Strict headless mode remains available via `--browser-mode headless`, but it is not the recommended production path for this target because mobile.de currently blocks strict headless in this environment.
 
 ## CLI Options
 
@@ -132,51 +80,51 @@ when strict headless rendering is unreliable.
 |---|---:|---|
 | `--state` | `nordrhein-westfalen` | German state slug |
 | `--start-url` | empty | Optional regional URL/template; `{page}` is supported |
-| `--max-vendors` | `0` | Vendor limit, 0 means unlimited |
-| `--max-cars-per-vendor` | `0` | Vehicle limit per vendor, 0 means unlimited |
-| `--max-vehicles-per-vendor` | empty | Alias for `--max-cars-per-vendor` |
-| `--max-pages` | `0` | Regional page limit |
+| `--pipeline-mode` | `sqlite` | Use `sqlite` for final/capped runs |
 | `--browser` | `chromium` | `chromium`, `chrome`, or `firefox` |
 | `--browser-mode` | `headed` | `headless`, `headed`, or `xvfb` |
-| `--headless` | empty | Backward-compatible shortcut |
 | `--fetch-strategy` | `auto` | `auto`, `curl`, or `playwright` |
 | `--detail-policy` | `missing-required` | `always`, `missing-required`, `financing-only`, or `never` |
-| `--pipeline-mode` | `legacy` | `legacy` or SQLite `sqlite` |
-| `--regional-concurrency` | `1` | Regional producer setting |
-| `--vendor-concurrency` | `1` | SQLite vendor workers |
-| `--vehicle-listing-concurrency` | `1` | Listing traversal setting |
-| `--vehicle-detail-concurrency` | `1` | SQLite vehicle detail workers |
-| `--curl-concurrency` | `4` | curl fetch concurrency |
-| `--playwright-concurrency` | `3` | Playwright fetch concurrency setting |
-| `--checkpoint-every` | `50` | Legacy JSON checkpoint batch size |
-| `--flush-every` | `100` | Durable writer batch setting |
-| `--resume` | `true` | Resume checkpoints/state |
+| `--max-vendors` | `0` | Vendor cap; `0` means uncapped |
+| `--max-cars-per-vendor` | `0` | Vehicle cap per vendor; `0` means uncapped |
+| `--vendor-concurrency` | `1` | Vendor worker count |
+| `--vehicle-detail-concurrency` | `1` | Detail worker count |
+| `--detail-max-retries` | `1` | Detail-page retry count |
+| `--benchmark` | `false` | Write benchmark summary |
 | `--clean-run` | `false` | Clear checkpoints/state and disable resume |
-| `--force-resume` | `false` | Allow SQLite resume after config hash mismatch |
-| `--output-dir` | `data/output` | Final output directory |
-| `--debug` | `false` | Enable debug behavior |
-| `--save-debug-artifacts` | `false` | Save failure HTML/screenshots |
-| `--user-data-dir` | empty | Optional persistent Playwright profile directory |
-| `--storage-state` | empty | Optional Playwright storage state JSON |
-| `--min-delay` / `--max-delay` | `2.0` / `5.0` | Polite delay range |
-| `--max-retries` | `3` | Navigation/fetch retry count |
+| `--output-dir` | empty | Optional output directory override |
 
 ## Output Files
 
+When existing root data/state files are present and `--overwrite` is not used, the run writes to a new folder:
+
 ```text
-data/raw/vendors_raw.csv
-data/raw/vendors_raw.json
-data/raw/cars_raw.csv
-data/raw/cars_raw.json
-data/processed/cars_processed.csv
-data/processed/cars_processed.json
-data/output/errors.csv
-data/output/errors.json
-data/output/mobile_de_nrw_dashboard.xlsx
-data/output/mobile_de_nrw_report.docx
+data/runs/<run_id>/
 ```
 
-Excel sheets include:
+Key files:
+
+```text
+data/runs/<run_id>/raw/vendors_raw.csv
+data/runs/<run_id>/raw/vendors_raw.json
+data/runs/<run_id>/raw/cars_raw.csv
+data/runs/<run_id>/raw/cars_raw.json
+data/runs/<run_id>/processed/cars_processed.csv
+data/runs/<run_id>/processed/cars_processed.json
+data/runs/<run_id>/output/mobile_de_nrw_dashboard.xlsx
+data/runs/<run_id>/output/mobile_de_nrw_report.docx
+data/runs/<run_id>/output/errors.csv
+data/runs/<run_id>/output/errors.json
+data/runs/<run_id>/output/benchmark_summary.json
+```
+
+Root `data/raw`, `data/state`, and `data/output` are not overwritten during guarded run-folder execution.
+
+## Excel Workbook
+
+The Excel workbook contains the required raw, processed, summary, coverage, error, compliance, and dashboard outputs.
+
+Expected sheets:
 
 - `Vendors`
 - `Vehicles`
@@ -185,8 +133,8 @@ Excel sheets include:
 - `Cars_Processed`
 - `Run_Summary`
 - `Data_Coverage`
+- `Requirements_Compliance`
 - `Errors`
-- `Dashboard`
 - `Vendor_Summary`
 - `Manufacturer_Summary`
 - `Category_Summary`
@@ -196,23 +144,58 @@ Excel sheets include:
 - `Classification_Summary`
 - `Category_By_Manufacturer`
 - `Origin_Summary`
+- `Dashboard`
 
-## Required Schema
+## Word Report
 
-Vendor output always includes the required task columns: `Händler ID`,
-`Händlername`, `Standort`, `PLZ`, `Städte`, `Bundesland`, `Land`, phone/fax/email
-fields, `Hauptseite`, `Mobile.de_Links`, and `Anzahl der Fahrzeuge`.
+The Word report documents:
 
-Vehicle output always includes the required task columns: dealer identifiers,
-make/model/type/status/registration/mileage/fuel/CO2/price/power/seats/gearbox,
-emissions class, color, series, trim, displacement, doors, owners, `Finanzierung`,
-`Financing`, bank/intermediary, financing amounts/rates, duration, and traceability
-columns such as `source_vendor_url`, `source_vehicle_url`, `fetch_strategy`,
-`fetch_status`, `parse_status`, `vehicle_data_source`, `scraped_at`, and `run_id`.
+- extraction methodology
+- Docker/Xvfb server-compatible execution
+- strict headless limitation
+- detail-page/source limitation
+- classification methodology
+- dashboard findings
+- run summary
+- known limitations
 
-## Classification Rules
+It includes the exact statement:
 
-Vehicle categories are exactly:
+```text
+Schema completeness is guaranteed; source completeness is measured.
+```
+
+## Data_Coverage
+
+`Data_Coverage` reports per-field non-empty counts, total row counts, and coverage percentages. It is the primary measurement of source completeness for each vendor and vehicle field. Missing values are not guessed or fabricated.
+
+## Requirements_Compliance
+
+`Requirements_Compliance` reports one row per required task field with:
+
+- `field_name`
+- `dataset`
+- `required_by_task`
+- `final_excel_column_exists`
+- `extractor_exists`
+- `current_source`
+- `current_coverage_pct`
+- `sample_present_value`
+- `missing_count`
+- `risk_level`
+- `status`
+- `notes`
+
+Status values:
+
+- `satisfied`: column/extractor exist and source coverage is acceptable in the run
+- `partially_satisfied`: column/extractor exist but source values are sparse
+- `schema_only`: column/extractor exist but current coverage is 0%
+- `missing`: required column or extractor is absent
+
+## Classification
+
+Vehicle categories are mapped to:
 
 - `PKW`
 - `Motorrad`
@@ -220,11 +203,7 @@ Vehicle categories are exactly:
 - `LKW`
 - `Andere`
 
-Classification metadata columns include `raw_vehicle_type`,
-`normalized_vehicle_type`, `vehicle_category`,
-`vehicle_category_confidence`, and `vehicle_category_rule`.
-
-Manufacturer origins are exactly:
+Manufacturer origins are mapped to:
 
 - `Deutschland`
 - `Italien`
@@ -233,33 +212,37 @@ Manufacturer origins are exactly:
 - `Frankreich`
 - `Andere`
 
-Manufacturer grouping follows the task-defined categories, not historical/legal
-corporate-origin definitions. For example, Ford and Volvo are assigned to
-Deutschland because they are listed under Deutschland in the assignment.
+The final classification uses the task-defined values. Literal `Unknown`/`Other` should not appear in final classification columns.
 
-## Dashboard Methodology
+## Known Limitations
 
-The dashboard reports top/least vendors, best/worst deal candidates, efficient
-vehicles, manufacturer summaries, origin summaries, and top category/manufacturer
-combinations. Ranking is heuristic and explainable: score columns expose price,
-mileage, age, CO2, performance/price-per-kW, confidence, and the number of fields
-available. Missing values are not fabricated; rows with too little information are
-excluded from ranked tables or receive lower confidence.
+Some vehicle detail fields such as CO₂-Emissionen, Baureihe, Ausstattungslinie, and Anzahl der Fahrzeughalter showed low source coverage because mobile.de detail pages returned site-side 403/503 responses. These values are not guessed and are reported transparently in Data_Coverage and Requirements_Compliance.
 
-## Limitations
+Financing fields are populated only when mobile.de exposes a financing offer in the listing payload or detail source. Dealer homepage, second phone, mobile phone, and fax fields can be sparse because not every dealer publishes those values.
 
-The scraper uses responsible browser automation and does not require authentication
-or private endpoints. If a page is unavailable, the run records the failure reason
-and continues with measurable coverage where possible. Financing, email, phone, and
-detail-page technical fields only appear when the public source exposes them.
+Regional search state and actual vendor location are kept separate:
 
-For production-grade contractual data access, an authorized API/data partnership
-would be preferable. This assignment focuses on publicly visible website extraction
-as requested.
+- `Bundesland`: actual vendor state/region when available or derivable from a German PLZ
+- `Land`: actual vendor country
+- `search_state`: searched/assigned state, such as `Nordrhein-Westfalen`
+
+The project is not 1:1 source-complete because mobile.de does not expose every requested value in every accessible source and detail pages may be blocked. The deliverable is complete structurally and reports measured source limitations.
+
+## Final Validation Checklist
+
+- `pytest` passed
+- Docker build passed
+- Docker/Xvfb smoke passed
+- Excel generated
+- Word generated
+- `Requirements_Compliance` present
+- `Data_Coverage` present
+- `Errors` present
+- No literal `Unknown`/`Other` in final classifications
+- Detail limitations documented
 
 ## Tests
 
-```bash
-python -m pytest -q
+```powershell
+venv\Scripts\python.exe -m pytest tests/ -v --tb=short
 ```
-

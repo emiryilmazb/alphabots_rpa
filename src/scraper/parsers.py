@@ -7,7 +7,7 @@ import logging
 import re
 from collections.abc import Iterator
 from typing import Any
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup, Tag
 
@@ -48,6 +48,28 @@ VEHICLE_CATEGORY_LABELS = {
     "Bus": "Busse",
     "AgriculturalVehicle": "Agrarfahrzeuge",
     "ForkliftTruck": "Stapler",
+}
+
+
+VEHICLE_CATEGORY_ALIASES = {
+    "Car": ["Pkw", "PKW", "Car", "Auto", "Autos"],
+    "Motorbike": ["Motorrad", "Motorräder", "Motorraeder", "Motorbike"],
+    "Motorhome": ["Wohnmobil", "Wohnmobile", "Wohnmobil andere", "Motorhome"],
+    "VanUpTo7500": [
+        "Transporter",
+        "Transporter und Lkw bis 7,5 t",
+        "Lkw bis 7,5 t",
+        "Van or truck up to 7.5 t",
+        "Van or truck up to 7,5 t",
+    ],
+    "TruckOver7500": ["Lkw ab 7,5 t", "LKW ab 7,5 t", "Truck over 7.5 t", "Truck over 7,5 t"],
+    "SemiTrailerTruck": ["Sattelzugmaschine", "Sattelzugmaschinen", "Semi-trailer truck"],
+    "SemiTrailer": ["Auflieger", "Semi-trailer"],
+    "Trailer": ["Anhänger", "Anhaenger", "Trailer"],
+    "ConstructionMachine": ["Baumaschine", "Baumaschinen"],
+    "Bus": ["Bus", "Busse"],
+    "AgriculturalVehicle": ["Agrarfahrzeug", "Agrarfahrzeuge", "Agricultural vehicle"],
+    "ForkliftTruck": ["Stapler", "Forklift truck"],
 }
 
 
@@ -452,7 +474,7 @@ def parse_vendor_json_ld(html: str) -> dict[str, Any]:
                     result["plz"] = _none_if_placeholder(addr.get("postalCode"))
                     result["city"] = _none_if_placeholder(addr.get("addressLocality"))
                     result["region"] = _none_if_placeholder(addr.get("addressRegion"))
-                    result["country"] = _none_if_placeholder(addr.get("addressCountry"))
+                    result["country"] = _country_name(_none_if_placeholder(addr.get("addressCountry")))
                 return result
 
     return result
@@ -482,6 +504,12 @@ def parse_vendor_next_data(html: str) -> dict[str, Any]:
                     "street": _none_if_placeholder(location.get("street")),
                     "plz": _none_if_placeholder(location.get("zipcode")),
                     "city": _none_if_placeholder(location.get("city")),
+                    "region": _first_present(
+                        location.get("region"),
+                        location.get("state"),
+                        location.get("federalState"),
+                        location.get("addressRegion"),
+                    ),
                     "country": _country_name(_none_if_placeholder(location.get("country"))),
                     "email": _none_if_placeholder(dealer.get("email")),
                     "url": normalize_dealer_url(_none_if_placeholder(dealer.get("homepageUrl"))),
@@ -509,9 +537,20 @@ def _first_present(*values: Any) -> str:
 
 
 def _country_name(country: str) -> str:
-    if country.upper() in {"DE", "DEU", "GERMANY", "DEUTSCHLAND"}:
+    normalized = country.upper()
+    if normalized in {"DE", "DEU", "GERMANY", "DEUTSCHLAND"}:
         return "Deutschland"
-    return country or "Deutschland"
+    if normalized in {"IT", "ITA", "ITALY", "ITALIA", "ITALIEN"}:
+        return "Italien"
+    if normalized in {"FR", "FRA", "FRANCE", "FRANKREICH"}:
+        return "Frankreich"
+    if normalized in {"NL", "NLD", "NETHERLANDS", "NIEDERLANDE"}:
+        return "Niederlande"
+    if normalized in {"BE", "BEL", "BELGIUM", "BELGIEN"}:
+        return "Belgien"
+    if normalized in {"AT", "AUT", "AUSTRIA", "ÖSTERREICH", "OESTERREICH"}:
+        return "Österreich"
+    return country or ""
 
 
 def _extract_phones_from_next(phones: dict[str, Any]) -> dict[str, str]:
@@ -664,6 +703,130 @@ def parse_vehicle_listing_summaries(html: str) -> dict[str, dict[str, str]]:
     return summaries
 
 
+def parse_vehicle_category_options(
+    html: str,
+    *,
+    require_positive_count: bool = False,
+) -> list[dict[str, Any]]:
+    """Return discovered vehicle category filters, optionally requiring count > 0."""
+    category_options: list[dict[str, Any]] = []
+    by_value: dict[str, dict[str, Any]] = {}
+    allowed = set(DEFAULT_VEHICLE_CATEGORY_VALUES)
+
+    def add(value: Any, *, label: Any = "", count: Any = None, url: Any = "") -> None:
+        text = _none_if_placeholder(value)
+        if text not in allowed:
+            return
+        parsed_count = _parse_count_value(count)
+        if parsed_count is not None and parsed_count <= 0:
+            return
+        if require_positive_count and parsed_count is None:
+            return
+
+        existing = by_value.get(text)
+        if existing is None:
+            existing = {
+                "value": text,
+                "label": _none_if_placeholder(label) or VEHICLE_CATEGORY_LABELS.get(text, text),
+                "count": parsed_count,
+                "url": _none_if_placeholder(url),
+            }
+            by_value[text] = existing
+            category_options.append(existing)
+            return
+        if existing.get("count") is None and parsed_count is not None:
+            existing["count"] = parsed_count
+        if not existing.get("label") and label:
+            existing["label"] = _none_if_placeholder(label)
+        if not existing.get("url") and url:
+            existing["url"] = _none_if_placeholder(url)
+
+    soup = BeautifulSoup(html, "lxml")
+    sidebar_options = _category_options_from_sidebar_inputs(soup)
+    for option in sidebar_options:
+        add(
+            option.get("value"),
+            label=option.get("label"),
+            count=option.get("count"),
+            url=option.get("url", ""),
+        )
+    if sidebar_options:
+        return category_options
+
+    for payload in extract_next_payloads(html):
+        for obj in iter_dicts(payload):
+            count = _category_count_from_obj(obj)
+            label = _first_present(obj.get("label"), obj.get("name"), obj.get("localized"))
+            add(obj.get("vc"), label=label, count=count)
+            add(obj.get("vehicleCategory"), label=label, count=count)
+            raw_values = obj.get("values")
+            if isinstance(raw_values, list) and not require_positive_count:
+                for value in raw_values:
+                    add(value)
+            raw_options = obj.get("options")
+            if isinstance(raw_options, list):
+                for option in raw_options:
+                    if isinstance(option, dict):
+                        add(
+                            option.get("value"),
+                            label=_first_present(option.get("label"), option.get("name"), option.get("localized")),
+                            count=_category_count_from_obj(option),
+                        )
+
+    for elem in soup.find_all(["a", "button", "label"]):
+        if elem.find_parent(["script", "style", "noscript"]):
+            continue
+        text = clean_text(elem.get_text(" ", strip=True))
+        if not text:
+            continue
+        href = _none_if_placeholder(elem.get("href") or elem.get("data-href"))
+        href_value = _category_value_from_href(href)
+        if href_value:
+            add(
+                href_value,
+                label=_category_label_from_text(text, href_value),
+                count=_category_count_from_text(text, href_value),
+                url=href,
+            )
+            continue
+
+    return category_options
+
+
+def _category_options_from_sidebar_inputs(soup: BeautifulSoup) -> list[dict[str, Any]]:
+    """Parse the real sidebar vehicle-category controls from labelled input chips."""
+    options: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    allowed = set(DEFAULT_VEHICLE_CATEGORY_VALUES)
+    for input_elem in soup.select("input[value]"):
+        value = _none_if_placeholder(input_elem.get("value"))
+        if value not in allowed or value in seen:
+            continue
+        label_elem = input_elem.find_parent("label")
+        if label_elem is None:
+            continue
+        text = clean_text(label_elem.get_text(" ", strip=True))
+        count = _category_count_from_text(text, value)
+        if count is None:
+            count = _parenthesized_count_from_text(text)
+        if count is None or count <= 0:
+            continue
+        label = _category_sidebar_label(label_elem, value)
+        options.append({"value": value, "label": label, "count": count, "url": ""})
+        seen.add(value)
+    return options
+
+
+def _category_sidebar_label(label_elem: Tag, value: str) -> str:
+    for elem in label_elem.find_all(True):
+        class_text = " ".join(str(part) for part in elem.get("class", []))
+        if "vehicleCategoryChipLabel" in class_text:
+            text = clean_text(elem.get_text(" ", strip=True))
+            if text:
+                return text
+    return _category_label_from_text(clean_text(label_elem.get_text(" ", strip=True)), value)
+
+
 def parse_vehicle_category_values(html: str) -> list[str]:
     """Return vehicle category query values exposed by the dealer inventory page."""
     values: list[str] = []
@@ -673,6 +836,9 @@ def parse_vehicle_category_values(html: str) -> list[str]:
         text = _none_if_placeholder(value)
         if text in allowed and text not in values:
             values.append(text)
+
+    for option in parse_vehicle_category_options(html, require_positive_count=True):
+        add(option.get("value"))
 
     for payload in extract_next_payloads(html):
         for obj in iter_dicts(payload):
@@ -689,6 +855,85 @@ def parse_vehicle_category_values(html: str) -> list[str]:
                         add(option.get("value"))
 
     return values
+
+
+def _category_count_from_obj(obj: dict[str, Any]) -> int | None:
+    for key in [
+        "count",
+        "cnt",
+        "numResults",
+        "numResultsTotal",
+        "resultCount",
+        "resultsCount",
+        "total",
+        "hits",
+    ]:
+        count = _parse_count_value(obj.get(key))
+        if count is not None:
+            return count
+    return None
+
+
+def _parse_count_value(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    text = clean_text(value)
+    match = re.search(r"\d[\d.\s]*", text)
+    if not match:
+        return None
+    return int(re.sub(r"\D", "", match.group(0)))
+
+
+def _parenthesized_count_from_text(text: str) -> int | None:
+    matches = re.findall(r"[\(\[]\s*(\d{1,6}(?:[.\s]\d{3})*)\s*[\)\]]", clean_text(text))
+    if not matches:
+        return None
+    return _parse_count_value(matches[-1])
+
+
+def _category_value_from_href(href: str) -> str:
+    if not href:
+        return ""
+    query = parse_qs(urlparse(href).query)
+    values = query.get("vc") or query.get("vehicleCategory")
+    if values:
+        value = _none_if_placeholder(values[0])
+        if value in DEFAULT_VEHICLE_CATEGORY_VALUES:
+            return value
+    return ""
+
+
+def _category_aliases(value: str) -> list[str]:
+    aliases = [value, VEHICLE_CATEGORY_LABELS.get(value, "")]
+    aliases.extend(VEHICLE_CATEGORY_ALIASES.get(value, []))
+    return [alias for alias in dict.fromkeys(clean_text(alias) for alias in aliases) if alias]
+
+
+def _category_label_from_text(text: str, value: str) -> str:
+    lowered = text.lower()
+    for alias in _category_aliases(value):
+        if alias.lower() in lowered:
+            return alias
+    return VEHICLE_CATEGORY_LABELS.get(value, value)
+
+
+def _category_count_from_text(text: str, value: str) -> int | None:
+    cleaned = clean_text(text)
+    for alias in _category_aliases(value):
+        escaped = re.escape(alias)
+        patterns = [
+            rf"\b{escaped}\b\s*[\(\[]?\s*(\d{{1,6}}(?:[.\s]\d{{3}})*)",
+            rf"(\d{{1,6}}(?:[.\s]\d{{3}})*)\s*\b{escaped}\b",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, cleaned, re.I)
+            if match:
+                return _parse_count_value(match.group(1))
+    return None
 
 
 def _merge_listing_summary(

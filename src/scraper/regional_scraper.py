@@ -23,6 +23,8 @@ class RegionalScraper:
         self.browser = browser
         self.config = config
         self.fetch_manager = FetchStrategyManager(config, browser)
+        self.last_discovered_count = 0
+        self.last_enqueued_count = 0
 
     async def collect_dealer_entries(
         self,
@@ -37,7 +39,10 @@ class RegionalScraper:
         """
         all_dealers: list[dict[str, str]] = []
         seen_urls: set[str] = set()
+        discovered_urls: set[str] = set()
         page_num = 0
+        self.last_discovered_count = 0
+        self.last_enqueued_count = 0
 
         while True:
             # Check page limit
@@ -77,11 +82,20 @@ class RegionalScraper:
             new_count = 0
             for d in dealers:
                 d["url"] = normalize_dealer_url(d.get("url", ""))
-                if d["url"] and d["url"] not in seen_urls:
+                if not d["url"]:
+                    continue
+                if d["url"] not in discovered_urls:
+                    discovered_urls.add(d["url"])
+                    self.last_discovered_count = len(discovered_urls)
+                if d["url"] not in seen_urls:
+                    if self.config.max_vendors > 0 and len(all_dealers) >= self.config.max_vendors:
+                        continue
                     seen_urls.add(d["url"])
-                    all_dealers.append(d)
+                    limited_dealer = dict(d)
+                    all_dealers.append(limited_dealer)
                     if on_dealer is not None:
-                        await on_dealer(dict(d))
+                        await on_dealer(dict(limited_dealer))
+                    self.last_enqueued_count = len(all_dealers)
                     new_count += 1
 
             logger.info("Page %d: found %d dealers (%d new, %d total)",
@@ -100,7 +114,11 @@ class RegionalScraper:
             page_num += 1
             await self.browser.polite_delay()
 
-        logger.info("Regional scraping complete: %d unique dealers collected.", len(all_dealers))
+        logger.info(
+            "Regional scraping complete: %d unique dealers discovered; %d selected for processing.",
+            self.last_discovered_count,
+            len(all_dealers),
+        )
         return all_dealers
 
     @staticmethod

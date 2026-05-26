@@ -28,6 +28,6 @@ data/browser_profile/*
 !data/browser_profile/.gitkeep
 data/browser_state/*
 !data/browser_state/.gitkeep
+data/runs/*
+!data/runs/.gitkeep
 
-# DELETE BEFORE COMMITTING
-*/graphify-out/*

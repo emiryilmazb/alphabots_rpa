@@ -26,6 +26,7 @@ from src.scraper.parsers import (
     parse_vehicle_listing_urls,
     parse_vehicle_listing_summaries,
     parse_vehicle_category_values,
+    parse_vehicle_category_options,
     DEFAULT_VEHICLE_CATEGORY_VALUES,
     VEHICLE_CATEGORY_LABELS,
     split_vehicle_title,
@@ -53,6 +54,8 @@ class VehicleScraper:
         self.config = config
         self.fetch_manager = FetchStrategyManager(config, browser)
         self.listing_summaries: dict[str, dict[str, str]] = {}
+        self.category_metadata: dict[str, dict[str, Any]] = {}
+        self.last_category_report: list[dict[str, Any]] = []
 
     async def collect_vehicle_urls(self, dealer_url: str) -> list[str]:
         """
@@ -73,15 +76,37 @@ class VehicleScraper:
     async def collect_vehicle_entries(self, dealer_url: str) -> list[dict[str, str]]:
         """Collect vehicle listing-card records from every dealer inventory category."""
         entries_by_key: dict[str, dict[str, str]] = {}
+        self.category_metadata = {}
+        self.last_category_report = []
         category_values = await self._category_sequence_from_current_page()
-        if not category_values:
-            category_values = [None]
-
         visited_categories = 0
-        for category_value in category_values:
+        empty_categories = 0
+        visited_category_urls: list[str] = []
+        for category_index, category_value in enumerate(category_values):
+            current_category_url = dealer_url
+            metadata = self.category_metadata.get(category_value or "", {})
+            category_report = {
+                "category": category_value or "base",
+                "label": metadata.get("source_category_label") or VEHICLE_CATEGORY_LABELS.get(category_value or "", "base"),
+                "count": metadata.get("source_category_count"),
+                "url": current_category_url,
+                "visited": False,
+                "skipped": False,
+                "skip_reason": "",
+                "vehicle_count": 0,
+            }
             if category_value:
                 category_url = self._dealer_category_url(dealer_url, category_value)
+                current_category_url = category_url
+                category_report["url"] = category_url
+                metadata = self.category_metadata.setdefault(category_value, {})
+                metadata.setdefault("source_category", category_value)
+                metadata.setdefault("source_category_label", VEHICLE_CATEGORY_LABELS.get(category_value, ""))
+                metadata["source_category_url"] = category_url
                 if not await self.browser.safe_goto(category_url):
+                    category_report["skipped"] = True
+                    category_report["skip_reason"] = self.browser.last_error or "navigation_failed"
+                    self.last_category_report.append(category_report)
                     logger.debug(
                         "Skipping vehicle category %s for %s: %s",
                         category_value,
@@ -89,6 +114,8 @@ class VehicleScraper:
                         self.browser.last_error,
                     )
                     continue
+            visited_category_urls.append(current_category_url)
+            category_report["visited"] = True
 
             category_entries = await self._collect_entries_from_loaded_inventory(
                 dealer_url,
@@ -107,7 +134,37 @@ class VehicleScraper:
                     break
             if new_entries_in_category:
                 visited_categories += 1
+            else:
+                empty_categories += 1
+            category_report["vehicle_count"] = new_entries_in_category
+            self.last_category_report.append(category_report)
             if self.config.max_cars_per_vendor > 0 and len(entries_by_key) >= self.config.max_cars_per_vendor:
+                remaining_categories = [
+                    str(value)
+                    for value in category_values[category_index + 1 :]
+                    if value
+                ]
+                if remaining_categories:
+                    reason = f"max_cars_per_vendor reached after {category_value or 'current'}"
+                    for remaining in remaining_categories:
+                        remaining_metadata = self.category_metadata.get(remaining, {})
+                        self.last_category_report.append(
+                            {
+                                "category": remaining,
+                                "label": remaining_metadata.get("source_category_label") or VEHICLE_CATEGORY_LABELS.get(remaining, ""),
+                                "count": remaining_metadata.get("source_category_count"),
+                                "url": self._dealer_category_url(dealer_url, remaining),
+                                "visited": False,
+                                "skipped": True,
+                                "skip_reason": reason,
+                                "vehicle_count": 0,
+                            }
+                        )
+                    logger.info(
+                        "max-cars-per-vendor reached after %s; skipping remaining categories: %s",
+                        category_value or "current",
+                        ", ".join(remaining_categories),
+                    )
                 break
             await self.browser.polite_delay()
 
@@ -117,6 +174,24 @@ class VehicleScraper:
             len(entries),
             visited_categories,
         )
+        logger.info(
+            "Vehicle category traversal summary for %s: category_urls=%s skipped_empty_categories=%d",
+            dealer_url,
+            ",".join(visited_category_urls) or dealer_url,
+            empty_categories,
+        )
+        for report in self.last_category_report:
+            logger.info(
+                "Vehicle category result for %s: category=%s count=%s visited=%s skipped=%s reason=%s vehicles=%d url=%s",
+                dealer_url,
+                report["category"],
+                report.get("count"),
+                report["visited"],
+                report["skipped"],
+                report.get("skip_reason", ""),
+                report["vehicle_count"],
+                report["url"],
+            )
         return entries
 
     async def _collect_entries_from_loaded_inventory(
@@ -129,6 +204,7 @@ class VehicleScraper:
         entries: list[dict[str, str]] = []
         seen: set[str] = set()
         page = self.browser.page
+        category_metadata = self.category_metadata.get(category_value or "", {})
 
         logger.debug(
             "Collecting vehicle entries from: %s category=%s",
@@ -147,7 +223,7 @@ class VehicleScraper:
             html = await page.content()
             structured_summaries = parse_vehicle_listing_summaries(html)
             for url, summary in structured_summaries.items():
-                self._apply_category_fallback(summary, category_value)
+                self._apply_category_fallback(summary, category_value, category_metadata)
                 self.listing_summaries[url] = self._merge_entry(
                     self.listing_summaries.get(url, {}),
                     summary,
@@ -175,7 +251,7 @@ class VehicleScraper:
                         category_value,
                     )
                 summary["Vehicle_URL"] = summary_url
-                self._apply_category_fallback(summary, category_value)
+                self._apply_category_fallback(summary, category_value, category_metadata)
                 self.listing_summaries[summary_url] = self._merge_entry(
                     self.listing_summaries.get(summary_url, {}),
                     summary,
@@ -188,7 +264,7 @@ class VehicleScraper:
                 if url in seen:
                     continue
                 summary = self.listing_summaries.get(url, {"Vehicle_URL": url})
-                self._apply_category_fallback(summary, category_value)
+                self._apply_category_fallback(summary, category_value, category_metadata)
                 seen.add(url)
                 entries.append(summary)
 
@@ -212,21 +288,54 @@ class VehicleScraper:
         return entries
 
     async def _category_sequence_from_current_page(self) -> list[str | None]:
-        if not self.config.traverse_vehicle_categories:
+        mode = getattr(self.config, "category_traversal", "discovered")
+
+        # --category-traversal off  OR  legacy --traverse-vehicle-categories false
+        if mode == "off" or not self.config.traverse_vehicle_categories:
             return [None]
 
         try:
             html = await self.browser.page.content()
         except Exception:
             html = ""
-        discovered = parse_vehicle_category_values(html)
-        if not discovered:
-            return [None, *DEFAULT_VEHICLE_CATEGORY_VALUES]
-        sequence: list[str | None] = []
-        for value in [*discovered, *DEFAULT_VEHICLE_CATEGORY_VALUES]:
-            if value not in sequence:
-                sequence.append(value)
-        return sequence
+        discovered_options = parse_vehicle_category_options(html, require_positive_count=True)
+        self.category_metadata = {
+            str(option["value"]): {
+                "source_category": str(option["value"]),
+                "source_category_label": str(option.get("label") or VEHICLE_CATEGORY_LABELS.get(str(option["value"]), "")),
+                "source_category_count": option.get("count"),
+                "source_category_url": str(option.get("url") or ""),
+            }
+            for option in discovered_options
+            if option.get("value")
+        }
+        discovered = [str(option["value"]) for option in discovered_options if option.get("value")]
+
+        if mode == "all":
+            # Legacy brute-force: discovered first, then all hardcoded (deduplicated)
+            if not discovered:
+                discovered = parse_vehicle_category_values(html)
+            if not discovered:
+                return [None, *DEFAULT_VEHICLE_CATEGORY_VALUES]
+            sequence: list[str | None] = []
+            for value in [*discovered, *DEFAULT_VEHICLE_CATEGORY_VALUES]:
+                if value not in sequence:
+                    sequence.append(value)
+            return sequence
+
+        # mode == "discovered" (default)
+        if discovered:
+            logger.info(
+                "Discovered %d vehicle categories from dealer page: %s",
+                len(discovered),
+                ", ".join(discovered),
+            )
+            return discovered
+        else:
+            logger.warning(
+                "Could not parse category sidebar; using current/base page only."
+            )
+            return [None]
 
     @staticmethod
     def _dealer_category_url(dealer_url: str, category_value: str) -> str:
@@ -269,14 +378,25 @@ class VehicleScraper:
         return merged
 
     @staticmethod
-    def _apply_category_fallback(summary: dict[str, str], category_value: str | None) -> None:
+    def _apply_category_fallback(
+        summary: dict[str, str],
+        category_value: str | None,
+        category_metadata: dict[str, Any] | None = None,
+    ) -> None:
         if category_value and not summary.get("Vehicle_Category"):
             summary["Vehicle_Category"] = category_value
         if category_value:
+            category_metadata = category_metadata or {}
             label = VEHICLE_CATEGORY_LABELS.get(category_value, "")
+            source_label = str(category_metadata.get("source_category_label") or label)
+            source_url = str(category_metadata.get("source_category_url") or "")
+            summary.setdefault("Vehicle_Category_Label", source_label)
+            summary.setdefault("Vehicle_Category_URL", source_url)
             summary.setdefault("source_category", category_value)
-            summary.setdefault("source_category_label", label)
-            summary.setdefault("source_category_url", "")
+            summary.setdefault("source_category_label", source_label)
+            if category_metadata.get("source_category_count") is not None:
+                summary.setdefault("source_category_count", str(category_metadata["source_category_count"]))
+            summary.setdefault("source_category_url", source_url)
             if label and VehicleScraper._should_replace_vehicle_type(summary.get("Fahrzeugtyp", "")):
                 summary["Fahrzeugtyp"] = label
 
@@ -438,6 +558,7 @@ class VehicleScraper:
             return []
 
         summaries: list[dict[str, str]] = []
+        category_metadata = self.category_metadata.get(category_value or "", {})
         for row in rows or []:
             title = clean_text(row.get("title", ""))
             brand, model = split_vehicle_title(title)
@@ -455,7 +576,7 @@ class VehicleScraper:
                 "Getriebe": self._match_text(details, r"\b(?:Automatik|Schaltgetriebe|Halbautomatik)\b"),
                 **attr_fields,
             }
-            self._apply_category_fallback(summary, category_value)
+            self._apply_category_fallback(summary, category_value, category_metadata)
             summaries.append({key: value for key, value in summary.items() if value})
         return summaries
 
@@ -586,14 +707,19 @@ class VehicleScraper:
         fetch_result = await self.fetch_manager.fetch(
             vehicle_url,
             validator=self._validate_vehicle_static,
+            playwright_max_retries=getattr(self.config, "detail_max_retries", 1),
         )
         if not fetch_result.ok:
             logger.warning("Failed to load vehicle page: %s", vehicle_url)
+            vehicle["fetch_strategy"] = fetch_result.strategy
+            vehicle["fetch_status"] = fetch_result.status_code or ""
+            vehicle["fetch_fallback_reason"] = fetch_result.fallback_reason
             vehicle["parse_status"] = fetch_result.error_message or "fetch_failed"
             return vehicle
 
         vehicle["fetch_strategy"] = fetch_result.strategy
         vehicle["fetch_status"] = fetch_result.status_code or ""
+        vehicle["fetch_fallback_reason"] = fetch_result.fallback_reason
         vehicle["parse_status"] = "ok"
         vehicle["vehicle_data_source"] = "detail_page" if fetch_result.strategy.startswith("playwright") else "static_html"
 

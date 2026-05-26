@@ -56,6 +56,35 @@ def test_parse_vendor_next_data():
     assert data["city"] == "Köln"
     assert data["homepage"] == "https://example.com"
     assert data["Telephone Number"] == "+49 0221 123456"
+    assert data["country"] == "Deutschland"
+
+
+def test_parse_vendor_next_data_normalizes_foreign_country_without_default_region():
+    html = _next_script(
+        json.dumps(
+            [
+                "$",
+                "Header",
+                None,
+                {
+                    "dealerData": {
+                        "customerId": "456",
+                        "homepageUrl": "https://home.mobile.de/ITALIA-AUTO",
+                        "name": "Italia Auto",
+                        "location": {
+                            "street": "Via Tonale 89",
+                            "zipcode": "47922",
+                            "city": "Rimini",
+                            "country": "IT",
+                        },
+                    },
+                },
+            ]
+        )
+    )
+    data = parse_vendor_next_data(html)
+    assert data["country"] == "Italien"
+    assert data["region"] == ""
 
 
 def test_parse_vehicle_count_and_listing_url():

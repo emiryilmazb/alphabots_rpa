@@ -7,7 +7,15 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.models import VEHICLE_COLUMNS, VENDOR_COLUMNS, validate_required_columns
+from src.models import (
+    CLASSIFICATION_REQUIRED_FIELDS,
+    FINANCING_REQUIRED_FIELDS,
+    LOW_SOURCE_COVERAGE_FIELDS,
+    VEHICLE_COLUMNS,
+    VEHICLE_REQUIRED_FIELDS,
+    VENDOR_COLUMNS,
+    validate_required_columns,
+)
 
 logger = logging.getLogger("mobile_de.excel")
 
@@ -47,6 +55,15 @@ def generate_excel(
             ("Cars_Processed", df_cars_processed),
             ("Run_Summary", _run_summary_df(run_summary)),
             ("Data_Coverage", _coverage_df(vendor_coverage, vehicle_coverage)),
+            (
+                "Requirements_Compliance",
+                _requirements_compliance_df(
+                    df_vendors,
+                    df_cars_processed,
+                    vendor_coverage,
+                    vehicle_coverage,
+                ),
+            ),
             ("Errors", _errors_df(errors)),
             ("Vendor_Summary", dashboard.get("vendor_summary", pd.DataFrame())),
             ("Manufacturer_Summary", dashboard.get("manufacturer_summary", pd.DataFrame())),
@@ -125,6 +142,154 @@ def _coverage_df(
     if not frames:
         return pd.DataFrame(columns=["dataset", "field", "non_empty_count", "total_count", "coverage_pct"])
     return pd.concat(frames, ignore_index=True)
+
+
+def _requirements_compliance_df(
+    df_vendors: pd.DataFrame,
+    df_cars_processed: pd.DataFrame,
+    vendor_coverage: pd.DataFrame | None,
+    vehicle_coverage: pd.DataFrame | None,
+) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    specs: list[tuple[str, str, pd.DataFrame, pd.DataFrame | None]] = []
+    specs.extend(("vendors", field, df_vendors, vendor_coverage) for field in VENDOR_COLUMNS)
+    specs.extend(("vehicles", field, df_cars_processed, vehicle_coverage) for field in VEHICLE_REQUIRED_FIELDS)
+    specs.extend(("financing", field, df_cars_processed, vehicle_coverage) for field in FINANCING_REQUIRED_FIELDS)
+    specs.extend(("classification", field, df_cars_processed, vehicle_coverage) for field in CLASSIFICATION_REQUIRED_FIELDS)
+
+    seen: set[tuple[str, str]] = set()
+    for dataset, field, df, coverage_df in specs:
+        key = (dataset, field)
+        if key in seen:
+            continue
+        seen.add(key)
+        coverage = _coverage_for_field(coverage_df, field, len(df))
+        column_exists = field in df.columns
+        extractor_exists = True
+        coverage_pct = float(coverage["coverage_pct"])
+        status = _compliance_status(column_exists, extractor_exists, coverage_pct)
+        rows.append(
+            {
+                "field_name": field,
+                "dataset": dataset,
+                "required_by_task": "yes",
+                "final_excel_column_exists": "yes" if column_exists else "no",
+                "extractor_exists": "yes" if extractor_exists else "no",
+                "current_source": _compliance_source(dataset, field),
+                "current_coverage_pct": coverage_pct,
+                "sample_present_value": _sample_present_value(df, field),
+                "missing_count": int(coverage["missing_count"]),
+                "risk_level": _risk_level(field, status),
+                "status": status,
+                "notes": _compliance_notes(dataset, field, status),
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "field_name",
+            "dataset",
+            "required_by_task",
+            "final_excel_column_exists",
+            "extractor_exists",
+            "current_source",
+            "current_coverage_pct",
+            "sample_present_value",
+            "missing_count",
+            "risk_level",
+            "status",
+            "notes",
+        ],
+    )
+
+
+def _coverage_for_field(coverage_df: pd.DataFrame | None, field: str, total: int) -> dict[str, float | int]:
+    if coverage_df is not None and not coverage_df.empty and "field" in coverage_df.columns:
+        matches = coverage_df[coverage_df["field"].astype(str) == field]
+        if not matches.empty:
+            row = matches.iloc[0]
+            present = int(row.get("non_empty_count", 0) or 0)
+            row_total = int(row.get("total_count", total) or total)
+            coverage_pct = float(row.get("coverage_pct", 0.0) or 0.0)
+            return {
+                "non_empty_count": present,
+                "total_count": row_total,
+                "coverage_pct": round(coverage_pct, 2),
+                "missing_count": max(row_total - present, 0),
+            }
+    return {
+        "non_empty_count": 0,
+        "total_count": int(total),
+        "coverage_pct": 0.0,
+        "missing_count": int(total),
+    }
+
+
+def _sample_present_value(df: pd.DataFrame, field: str) -> str:
+    if df is None or df.empty or field not in df.columns:
+        return ""
+    for value in df[field]:
+        if _has_value(value):
+            return str(value)
+    return ""
+
+
+def _has_value(value: object) -> bool:
+    if pd.isna(value):
+        return False
+    return str(value).strip() not in {"", "None", "nan", "NaN", "<NA>"}
+
+
+def _compliance_status(column_exists: bool, extractor_exists: bool, coverage_pct: float) -> str:
+    if not column_exists or not extractor_exists:
+        return "missing"
+    if coverage_pct == 0:
+        return "schema_only"
+    if coverage_pct < 75:
+        return "partially_satisfied"
+    return "satisfied"
+
+
+def _risk_level(field: str, status: str) -> str:
+    if field in LOW_SOURCE_COVERAGE_FIELDS and status == "schema_only":
+        return "high"
+    if status in {"missing", "schema_only"}:
+        return "high"
+    if status == "partially_satisfied":
+        return "medium"
+    return "low"
+
+
+def _compliance_source(dataset: str, field: str) -> str:
+    if dataset == "vendors":
+        if field == "Händler ID":
+            return "derived"
+        if field == "Bundesland":
+            return "vendor_address_or_region"
+        return "vendor_page"
+    if dataset == "financing":
+        return "listing_payload_financePlans_or_detail_page"
+    if dataset == "classification":
+        return "derived_processing"
+    if field in {"Händler ID", "Händlername", "PLZ"}:
+        return "derived_from_vendor"
+    if field in LOW_SOURCE_COVERAGE_FIELDS:
+        return "listing_payload_attribute_or_detail_page"
+    return "listing_payload_or_detail_page"
+
+
+def _compliance_notes(dataset: str, field: str, status: str) -> str:
+    if field == "Bundesland":
+        return "Actual vendor state/region; target search state is kept separately as search_state/Run_Summary target_state."
+    if field in LOW_SOURCE_COVERAGE_FIELDS:
+        return "Extractor exists, but current source coverage is low; values are not guessed when mobile.de does not expose them."
+    if dataset == "financing":
+        return "Populated only when mobile.de exposes a financing offer for the listing."
+    if dataset == "classification":
+        return "Derived from scraped vehicle type/manufacturer according to task rules."
+    if status == "partially_satisfied":
+        return "Column and extractor exist; this run had sparse source values."
+    return "Column and extractor are present."
 
 
 def _classification_summary(df: pd.DataFrame) -> pd.DataFrame:

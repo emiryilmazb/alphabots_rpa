@@ -31,6 +31,7 @@ def setup_logging(log_dir: Path, level: int = logging.INFO) -> logging.Logger:
     # Root logger
     logger = logging.getLogger("mobile_de")
     logger.setLevel(level)
+    logger.propagate = False
 
     # Prevent duplicate handlers on re-init
     if logger.handlers:

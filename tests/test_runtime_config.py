@@ -40,6 +40,8 @@ def test_parse_browser_options(monkeypatch):
             "3",
             "--detail-policy",
             "financing-only",
+            "--detail-max-retries",
+            "1",
             "--output-dir",
             str(Path("custom-output")),
             "--clean-run",
@@ -62,6 +64,7 @@ def test_parse_browser_options(monkeypatch):
     assert config.vendor_concurrency == 2
     assert config.vehicle_detail_concurrency == 3
     assert config.detail_policy == "financing-only"
+    assert config.detail_max_retries == 1
     assert config.clean_run is True
     assert config.resume is False
     assert config.output_dir == Path("custom-output")

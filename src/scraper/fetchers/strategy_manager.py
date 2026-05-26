@@ -43,10 +43,15 @@ class FetchStrategyManager:
         *,
         validator: Validator | None = None,
         allow_curl: bool = True,
+        playwright_max_retries: int | None = None,
     ) -> FetchResult:
         strategy = self.config.fetch_strategy
         if strategy == "playwright" or not allow_curl:
-            return await self._fetch_playwright(url, fallback_reason="")
+            return await self._fetch_playwright(
+                url,
+                fallback_reason="",
+                max_retries=playwright_max_retries,
+            )
 
         if strategy in {"auto", "curl"}:
             curl_result = await self.curl_fetcher.fetch(url, attempt=1)
@@ -56,16 +61,27 @@ class FetchStrategyManager:
                     curl_result.fallback_reason = validation.reason
                 return curl_result
 
-            logger.info(
-                "Static fetch was not sufficient for %s (%s); using Playwright.",
+            if curl_result.error_type != "ModuleNotFoundError":
+                logger.info(
+                    "Static fetch was not sufficient for %s (%s); using Playwright.",
+                    url,
+                    validation.reason,
+                )
+            return await self._fetch_playwright(
                 url,
-                validation.reason,
+                fallback_reason=validation.reason,
+                max_retries=playwright_max_retries,
             )
-            return await self._fetch_playwright(url, fallback_reason=validation.reason)
 
-        return await self._fetch_playwright(url, fallback_reason="")
+        return await self._fetch_playwright(url, fallback_reason="", max_retries=playwright_max_retries)
 
-    async def _fetch_playwright(self, url: str, *, fallback_reason: str) -> FetchResult:
+    async def _fetch_playwright(
+        self,
+        url: str,
+        *,
+        fallback_reason: str,
+        max_retries: int | None = None,
+    ) -> FetchResult:
         if self.playwright_fetcher is None:
             return FetchResult(
                 url=url,
@@ -74,7 +90,11 @@ class FetchStrategyManager:
                 error_message="Playwright fetcher is not configured.",
                 fallback_reason=fallback_reason,
             )
-        result = await self.playwright_fetcher.fetch(url, attempt=2 if fallback_reason else 1)
+        result = await self.playwright_fetcher.fetch(
+            url,
+            attempt=2 if fallback_reason else 1,
+            max_retries=max_retries,
+        )
         result.fallback_reason = fallback_reason
         return result
 
