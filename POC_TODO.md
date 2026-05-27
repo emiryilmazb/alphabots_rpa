@@ -228,3 +228,11 @@
 - Added manifest foundation
 - No scraper behavior changed
 - Next planned step: parser fixture safety net before splitting parsers.py
+
+## Phase B Parser Safety Net Notes
+- Added synthetic HTML fixtures.
+- Added parser fixture regression tests.
+- Protected current behavior before splitting parsers.py.
+- Known gap: "Türen" is not currently recognized as alias for "Anzahl der Türen".
+- Future improvement: add normalized label alias mapping for doors after parser refactor safety net is complete.
+- Next safe step: merge_runs.py synthetic tests or run_4shard.py orchestration tests.
