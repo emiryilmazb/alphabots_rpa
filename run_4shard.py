@@ -1,6 +1,6 @@
 import os, subprocess, time, glob, sys, argparse
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--state", default="nordrhein-westfalen")
     parser.add_argument("--max-vendors", type=int, default=100)

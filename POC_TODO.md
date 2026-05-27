@@ -221,3 +221,10 @@
 5. progress monitor
 6. cloud/stronger machine shard benchmark
 7. optional alternative detail fetch research
+
+## Phase A Implementation Notes
+- Added exception hierarchy
+- Added typed result models
+- Added manifest foundation
+- No scraper behavior changed
+- Next planned step: parser fixture safety net before splitting parsers.py

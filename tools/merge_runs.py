@@ -1,5 +1,5 @@
 import argparse, os, shutil, glob, subprocess, json, sys
-def merge():
+def merge() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--runs', nargs='+', required=True)
     parser.add_argument('--output', required=True)
