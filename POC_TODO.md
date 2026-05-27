@@ -243,3 +243,11 @@
 - run_4shard.py command construction tested with mocks.
 - No Docker or live scraping used in tests.
 - Future improvement: make merge output regeneration more modular if still difficult to test.
+
+## Phase D Parser Modularization Notes
+- parser structure map completed
+- first low-risk helper extraction (normalization helpers) completed
+- parsers.py remains backward-compatible
+- current public entry points preserved
+- no parser behavior changed
+- next step: extract financing parser or vehicle detail parser only after fixture coverage is expanded
