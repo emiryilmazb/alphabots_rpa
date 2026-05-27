@@ -1,0 +1,223 @@
+# POC and Professionalization Roadmap
+
+## 1. Baseline Summary
+- final branch: improvements
+- stable commit: 597e15f
+- recommended architecture: 4-shard Docker/Xvfb + uc-popup + resource blocking
+- validation summary:
+  - 34 regional pages
+  - 1,140 unique vendors
+  - 100-vendor / 780-vehicle validation
+  - 93 tests passing
+- final statement:
+  “Schema completeness is guaranteed; source completeness is measured.”
+
+## 2. Non-Negotiable Rules
+- never modify improvements branch directly
+- never commit generated data
+- never run full uncapped without explicit approval
+- every POC must be isolated and reversible
+- every change must preserve test pass status
+- every benchmark must be capped unless explicitly approved
+- final submission commit is rollback baseline
+
+## 3. Performance POCs
+- investigate safe shard counts on stronger hardware/cloud
+- retry 5/6/7/8 shard experiments on stronger hardware
+- evaluate cloud/server VM run with higher RAM/CPU
+- improve shard scheduling and balanced distribution
+- avoid overloaded vendors causing shard imbalance
+- add shard progress monitor
+- add estimated time remaining per shard
+- add retry/resume per shard
+- add per-shard failure recovery
+- investigate lighter detail fetch methods again only if isolated:
+  - browser-context fetch
+  - cookie-export + curl_cffi
+  - CDP response capture
+  - cached detail enrichment
+- improve resource blocking without breaking DOM
+- optional headless-like mode research, but Docker/Xvfb remains production path
+
+- Expected benefit: Higher scalability and lower runtime.
+- Risk: Bot detection and OOM issues.
+- Validation method: Capped benchmarking.
+- Rollback plan: Discard POC branch.
+
+## 4. Data Completeness Improvements
+- improve financing coverage reporting
+- distinguish:
+  - not available from source
+  - parser missed
+  - source changed after scrape
+  - stale listing
+- add field source metadata:
+  - listing
+  - detail
+  - financePlans
+  - derived
+  - unavailable
+- add field-level confidence
+- add source URL / extraction timestamp columns
+- improve vendor contact extraction:
+  - 2nd phone
+  - mobile phone
+  - fax
+  - email
+  - homepage
+- improve country/Bundesland validation
+- improve vehicle type/category classification traceability
+- improve manufacturer origin mapping traceability
+- handle “not applicable” fields better in Data_Coverage
+- avoid treating unavailable financing as parser failure
+- source availability vs parser miss distinction
+
+## 5. Code Professionalization / Refactor Ideas
+- split overly large modules if any
+- improve boundaries between:
+  - discovery
+  - vendor scraping
+  - vehicle listing scraping
+  - detail enrichment
+  - preprocessing
+  - output generation
+  - sharding orchestration
+- standardize config handling
+- centralize environment variable parsing
+- cleaner config/env handling
+- add typed dataclasses/Pydantic models for:
+  - shard config
+  - run summary
+  - detail fetch result
+  - coverage result
+  - merge result
+- improve exception hierarchy:
+  - BrowserError
+  - DetailFetchError
+  - SourceUnavailableError
+  - MergeError
+  - ShardError
+- replace ad-hoc dictionaries with typed structures where practical
+- standardize logging format
+- logging/progress/ETA improvements
+- improve retry/backoff utilities
+- remove duplicated parsing logic
+- isolate undetected_chromedriver-specific code behind interface
+- make merge_runs.py testable and modular
+- make run_4shard.py more production-grade
+- add graceful shutdown handling
+- add clear cleanup policy for Docker/Chrome/Xvfb
+- sharding orchestration improvements
+
+## 6. Testing Improvements
+- integration tests for run_4shard.py using mocked commands
+- run_4shard.py tests
+- merge_runs.py tests with synthetic shard outputs
+- regional pagination tests
+- global Händler ID stability tests
+- sharding distribution tests
+- Data_Coverage regression tests
+- Requirements_Compliance regression tests
+- parser fixtures for detail fields:
+  - CO₂
+  - Baureihe
+  - Ausstattungslinie
+  - Anzahl der Fahrzeughalter
+  - financing fields
+- tests for “not available from source” vs empty parser bug
+- tests for 0 = unlimited behavior
+- tests for .gitignore safety / no generated data staged if feasible
+- optional smoke-test workflow documentation
+
+## 7. Documentation Improvements
+- architecture diagram or textual architecture map
+- final run quickstart
+- troubleshooting guide:
+  - Docker/Xvfb
+  - UC popup
+  - Chrome/chromedriver
+  - database lock
+  - shard failure
+  - merge failure
+- performance table:
+  - single container
+  - 2 shard
+  - 4 shard
+  - 8 shard failed reason
+- source completeness explanation
+- data coverage interpretation guide
+- how to rerun process-existing
+- how to inspect output Excel/Word
+- how to resume/retry failed shards
+- submission checklist
+
+## 8. Operational Improvements
+- run monitor script
+- shard health checks
+- per-shard logs summary
+- automatic failure detection
+- automatic retry of failed shard
+- safe stop command
+- cleanup command
+- resource usage logging:
+  - RAM
+  - CPU
+  - disk
+  - Docker container stats
+- ETA calculation
+- notification when run completes
+
+## 9. Risk Register
+- mobile.de layout changes
+  - impact: High
+  - mitigation: CSS fallback selectors
+  - detection method: Extractor test suites
+- UC/chromedriver version mismatch
+  - impact: Medium
+  - mitigation: Version pinning
+  - detection method: Browser init error logs
+- Docker Desktop resource limits
+  - impact: High
+  - mitigation: 4-shard max validation
+  - detection method: Resource monitoring
+- RAM pressure
+  - impact: High
+  - mitigation: Resource blocking flag
+  - detection method: Container stats
+- Windows file locking
+  - impact: High
+  - mitigation: Isolated SQLite paths per shard
+  - detection method: SQLite busy exceptions
+- financing source unavailability
+  - impact: Low
+  - mitigation: Explicit reporting logic
+  - detection method: Coverage analysis
+- stale listings
+  - impact: Medium
+  - mitigation: Safe skipping
+  - detection method: 404/503 monitoring
+- data coverage misinterpretation
+  - impact: High
+  - mitigation: Clear final statement documentation
+  - detection method: Report review
+- accidental generated data commit
+  - impact: Medium
+  - mitigation: Strict gitignore
+  - detection method: Pre-commit review
+- overclaiming source completeness
+  - impact: High
+  - mitigation: Strict wording compliance
+  - detection method: Manual text review
+- risk and rollback plan
+  - impact: High
+  - mitigation: Rollback to 597e15f
+  - detection method: Regression tests
+
+## 10. Suggested Next POC Order
+1. Read-only code architecture audit
+2. run_4shard.py professionalization
+3. merge_runs.py tests
+4. coverage/source metadata improvements
+5. progress monitor
+6. cloud/stronger machine shard benchmark
+7. optional alternative detail fetch research
