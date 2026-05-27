@@ -236,3 +236,10 @@
 - Known gap: "Türen" is not currently recognized as alias for "Anzahl der Türen".
 - Future improvement: add normalized label alias mapping for doors after parser refactor safety net is complete.
 - Next safe step: merge_runs.py synthetic tests or run_4shard.py orchestration tests.
+
+## Phase C Sharding and Merge Safety Net Notes
+- Synthetic shard fixtures added.
+- merge_runs.py dedup behavior tested.
+- run_4shard.py command construction tested with mocks.
+- No Docker or live scraping used in tests.
+- Future improvement: make merge output regeneration more modular if still difficult to test.
