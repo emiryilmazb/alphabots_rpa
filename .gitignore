@@ -31,3 +31,25 @@ data/browser_state/*
 data/runs/*
 !data/runs/.gitkeep
 
+
+logs_shards/
+data/merged/
+data_shards/
+data_shards_*/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+archive/experiments/
+# Ad-hoc logs
+*_out.json
+*_out.txt
+*_log.txt
+debug_*.json
+debug_*.txt
+poc_out.json
+sanity_out.json
+exp_results.json
+shard_results.json
+final_sanity.json
+tmp_*.txt
+first_car_dump.txt

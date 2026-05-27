@@ -9,6 +9,8 @@ from src.scraper.parsers import (
     parse_vehicle_listing_summaries,
     parse_vehicle_category_values,
     parse_vehicle_urls_from_next_data,
+    parse_vehicle_specs,
+    parse_vehicle_detail_fields,
     extract_listing_attribute_fields,
     split_vehicle_title,
 )
@@ -164,6 +166,7 @@ def test_parse_structured_listing_payload_with_financing():
                                 "door": "4/5",
                                 "sc": "5",
                                 "emc": "Euro4",
+                                "pvo": "2",
                             },
                             "hasDamage": False,
                             "readyToDrive": True,
@@ -199,6 +202,7 @@ def test_parse_structured_listing_payload_with_financing():
     assert vehicle["Models"] == "Polo UNITED"
     assert vehicle["Fahrzeugtyp"] == "Kleinwagen"
     assert vehicle["Fahrzeugzustand"] == "Unfallfrei"
+    assert vehicle["Anzahl der Fahrzeughalter"] == "2"
     assert vehicle["Bank"] == "Santander Consumer Bank AG"
     assert vehicle["Laufzeit"] == "60 Monate"
 
@@ -230,3 +234,58 @@ def test_parse_structured_semi_trailer_category():
     assert vehicle["Fahrzeugtyp"] == "Auflieger"
     assert vehicle["Fahrzeugtyp_Raw"] == "Wechselfahrgestell"
     assert parse_vehicle_category_values(html) == ["SemiTrailer"]
+
+
+def test_parse_detail_label_value_targets_from_html_fixture():
+    html = """
+    <html><head><title>BMW 320 für 22.000 €</title></head><body>
+      <h1>BMW 320 Touring</h1>
+      <div data-testid="price-label">22.000 €</div>
+      <h3>Technische Daten</h3>
+      <dl>
+        <dt>Baureihe</dt><dd>G21</dd>
+        <dt>Ausstattungslinie</dt><dd>Luxury Line</dd>
+        <dt>Anzahl der Fahrzeughalter</dt><dd>2</dd>
+        <dt>Hubraum</dt><dd>1.995 cm³</dd>
+        <dt>Anzahl der Türen</dt><dd>4/5</dd>
+        <dt>Schadstoffklasse</dt><dd>Euro6d</dd>
+        <dt>Farbe</dt><dd>Blau Metallic</dd>
+        <dt>Anzahl Sitzplätze</dt><dd>5</dd>
+        <dt>CO2-Emissionen</dt><dd>124 g/km</dd>
+      </dl>
+    </body></html>
+    """
+
+    specs = parse_vehicle_specs(html)
+    assert specs["CO₂-Emissionen"] == "124 g/km"
+    assert specs["Baureihe"] == "G21"
+    assert specs["Ausstattungslinie"] == "Luxury Line"
+    assert specs["Anzahl der Fahrzeughalter"] == "2"
+    assert specs["Hubraum"] == "1.995 cm³"
+    assert specs["Anzahl der Türen"] == "4/5"
+    assert specs["Schadstoffklasse"] == "Euro6d"
+    assert specs["Farbe"] == "Blau Metallic"
+    assert specs["Anzahl Sitzplätze"] == "5"
+
+    fields = parse_vehicle_detail_fields(html)
+    assert fields["Markes"] == "BMW"
+    assert fields["Models"] == "320 Touring"
+    assert fields["CO₂-Emissionen"] == "124 g/km"
+
+
+def test_parse_detail_description_trim_line_without_section_header_noise():
+    html = """
+    <html><body>
+      <h1>Mercedes-Benz S 350</h1>
+      <div data-testid="price-label">85.890 €</div>
+      <h3>Technische Daten</h3>
+      <dl><dt>Baureihe</dt><dd>223</dd></dl>
+      <b>Ausstattungslinien und -Pakete</b>
+      <ul>
+        <li>Design- und Ausstattungslinie Standard</li>
+        <li>P20 Fahrassistenz-Paket</li>
+      </ul>
+    </body></html>
+    """
+
+    assert parse_vehicle_specs(html)["Ausstattungslinie"] == "Standard"

@@ -11,6 +11,7 @@ from src.scraper.fetchers import (
     FetchStrategyManager,
     PlaywrightFetcher,
     StaticValidation,
+    vehicle_id_from_url,
 )
 
 
@@ -68,6 +69,13 @@ def test_fetch_result_defaults_are_populated():
     assert result.final_url == "https://example.test"
     assert result.fetched_at
     assert result.ok is True
+
+
+def test_vehicle_id_from_url_extracts_detail_query_id():
+    assert (
+        vehicle_id_from_url("https://suchen.mobile.de/fahrzeuge/details.html?id=444369609&lang=de")
+        == "444369609"
+    )
 
 
 def test_curl_fetcher_mock_success():

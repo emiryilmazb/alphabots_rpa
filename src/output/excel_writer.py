@@ -62,6 +62,8 @@ def generate_excel(
                     df_cars_processed,
                     vendor_coverage,
                     vehicle_coverage,
+                    dashboard,
+                    run_summary,
                 ),
             ),
             ("Errors", _errors_df(errors)),
@@ -149,6 +151,8 @@ def _requirements_compliance_df(
     df_cars_processed: pd.DataFrame,
     vendor_coverage: pd.DataFrame | None,
     vehicle_coverage: pd.DataFrame | None,
+    dashboard: dict[str, pd.DataFrame] | None = None,
+    run_summary: dict | pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     specs: list[tuple[str, str, pd.DataFrame, pd.DataFrame | None]] = []
@@ -158,6 +162,9 @@ def _requirements_compliance_df(
     specs.extend(("classification", field, df_cars_processed, vehicle_coverage) for field in CLASSIFICATION_REQUIRED_FIELDS)
 
     seen: set[tuple[str, str]] = set()
+    summary = _summary_mapping(run_summary)
+    source_audit_completed = str(summary.get("source_audit_completed", "")).lower() == "true"
+    detail_strategy_status = str(summary.get("detail_strategy_status", ""))
     for dataset, field, df, coverage_df in specs:
         key = (dataset, field)
         if key in seen:
@@ -181,9 +188,17 @@ def _requirements_compliance_df(
                 "missing_count": int(coverage["missing_count"]),
                 "risk_level": _risk_level(field, status),
                 "status": status,
-                "notes": _compliance_notes(dataset, field, status),
+                "notes": _compliance_notes(
+                    dataset,
+                    field,
+                    status,
+                    source_audit_completed=source_audit_completed,
+                    detail_strategy_status=detail_strategy_status,
+                ),
             }
         )
+    rows.extend(_dashboard_compliance_rows(dashboard or {}))
+    rows.extend(_audit_compliance_rows(summary))
     return pd.DataFrame(
         rows,
         columns=[
@@ -245,7 +260,9 @@ def _compliance_status(column_exists: bool, extractor_exists: bool, coverage_pct
         return "missing"
     if coverage_pct == 0:
         return "schema_only"
-    if coverage_pct < 75:
+    if coverage_pct < 50:
+        return "weak"
+    if coverage_pct < 85:
         return "partially_satisfied"
     return "satisfied"
 
@@ -255,6 +272,8 @@ def _risk_level(field: str, status: str) -> str:
         return "high"
     if status in {"missing", "schema_only"}:
         return "high"
+    if status == "weak":
+        return "high" if field in LOW_SOURCE_COVERAGE_FIELDS else "medium"
     if status == "partially_satisfied":
         return "medium"
     return "low"
@@ -278,10 +297,22 @@ def _compliance_source(dataset: str, field: str) -> str:
     return "listing_payload_or_detail_page"
 
 
-def _compliance_notes(dataset: str, field: str, status: str) -> str:
+def _compliance_notes(
+    dataset: str,
+    field: str,
+    status: str,
+    *,
+    source_audit_completed: bool = False,
+    detail_strategy_status: str = "",
+) -> str:
     if field == "Bundesland":
         return "Actual vendor state/region; target search state is kept separately as search_state/Run_Summary target_state."
     if field in LOW_SOURCE_COVERAGE_FIELDS:
+        if source_audit_completed:
+            return (
+                "Extractor exists, but returned source coverage is low. "
+                f"Source audit/detail matrix status={detail_strategy_status or 'completed'}; values are not guessed."
+            )
         return "Extractor exists, but current source coverage is low; values are not guessed when mobile.de does not expose them."
     if dataset == "financing":
         return "Populated only when mobile.de exposes a financing offer for the listing."
@@ -289,7 +320,115 @@ def _compliance_notes(dataset: str, field: str, status: str) -> str:
         return "Derived from scraped vehicle type/manufacturer according to task rules."
     if status == "partially_satisfied":
         return "Column and extractor exist; this run had sparse source values."
+    if status == "weak":
+        return "Column and extractor exist; this run had very sparse source values."
     return "Column and extractor are present."
+
+
+def _summary_mapping(run_summary: dict | pd.DataFrame | None) -> dict[str, object]:
+    if run_summary is None:
+        return {}
+    if isinstance(run_summary, pd.DataFrame):
+        if {"metric", "value"}.issubset(run_summary.columns):
+            return dict(zip(run_summary["metric"].astype(str), run_summary["value"]))
+        if run_summary.shape[1] >= 2:
+            return dict(zip(run_summary.iloc[:, 0].astype(str), run_summary.iloc[:, 1]))
+        return {}
+    return dict(run_summary)
+
+
+def _requirement_row(
+    *,
+    field_name: str,
+    dataset: str,
+    source: str,
+    coverage_pct: float,
+    status: str,
+    notes: str,
+    sample: str = "",
+    missing_count: int = 0,
+    risk_level: str | None = None,
+) -> dict[str, object]:
+    return {
+        "field_name": field_name,
+        "dataset": dataset,
+        "required_by_task": "yes",
+        "final_excel_column_exists": "yes",
+        "extractor_exists": "yes",
+        "current_source": source,
+        "current_coverage_pct": round(float(coverage_pct), 2),
+        "sample_present_value": sample,
+        "missing_count": missing_count,
+        "risk_level": risk_level or ("low" if status == "satisfied" else "medium"),
+        "status": status,
+        "notes": notes,
+    }
+
+
+def _dashboard_compliance_rows(dashboard: dict[str, pd.DataFrame]) -> list[dict[str, object]]:
+    requirements = [
+        ("Top and Least vendors", ["vendor_summary"], "Vendor_Summary/Dashboard"),
+        ("Best and worst deals", ["best_deals", "worst_deals"], "Best_Deals/Worst_Deals"),
+        ("Efficient Vehicles", ["efficient_vehicles"], "Efficient_Vehicles"),
+        (
+            "Highest and lowest manufacturers and top-selling categories",
+            ["manufacturer_summary", "category_manufacturer_summary"],
+            "Manufacturer_Summary/Category_By_Manufacturer",
+        ),
+        ("Excel output", [], "workbook"),
+        ("Word report", [], "word_report"),
+    ]
+    rows: list[dict[str, object]] = []
+    for field_name, keys, source in requirements:
+        available = True
+        if keys:
+            available = all(
+                key in dashboard and isinstance(dashboard[key], pd.DataFrame) and not dashboard[key].empty
+                for key in keys
+            )
+        rows.append(
+            _requirement_row(
+                field_name=field_name,
+                dataset="dashboard",
+                source=source,
+                coverage_pct=100.0 if available else 0.0,
+                status="satisfied" if available else "schema_only",
+                notes="Dashboard requirement is generated in the workbook/report." if available else "Dashboard input was empty in this run.",
+                missing_count=0 if available else 1,
+                risk_level="low" if available else "medium",
+            )
+        )
+    return rows
+
+
+def _audit_compliance_rows(summary: dict[str, object]) -> list[dict[str, object]]:
+    source_audit_completed = str(summary.get("source_audit_completed", "")).lower() == "true"
+    detail_status = str(summary.get("detail_strategy_status", ""))
+    detail_completed = bool(detail_status) and not detail_status.startswith("failed")
+    return [
+        _requirement_row(
+            field_name="source_audit_completed",
+            dataset="source_audit",
+            source="source_audit",
+            coverage_pct=100.0 if source_audit_completed else 0.0,
+            status="satisfied" if source_audit_completed else "schema_only",
+            sample=str(summary.get("source_audit_dir", "")),
+            missing_count=0 if source_audit_completed else 1,
+            risk_level="low" if source_audit_completed else "medium",
+            notes="Bounded source audit evidence saved." if source_audit_completed else "Source audit was not run for this workbook.",
+        ),
+        _requirement_row(
+            field_name="detail_strategy_matrix_completed",
+            dataset="detail_strategy",
+            source="detail_strategy_matrix",
+            coverage_pct=100.0 if detail_completed else 0.0,
+            status="satisfied" if detail_completed else "schema_only",
+            sample=str(summary.get("detail_strategy_matrix_path", "")),
+            missing_count=0 if detail_completed else 1,
+            risk_level="low" if detail_completed else "medium",
+            notes=f"Detail strategy status: {detail_status or 'not_run'}.",
+        ),
+    ]
 
 
 def _classification_summary(df: pd.DataFrame) -> pd.DataFrame:

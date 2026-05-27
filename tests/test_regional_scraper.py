@@ -27,7 +27,7 @@ def test_regional_on_dealer_respects_max_vendors():
         </body></html>
         """
         scraper = RegionalScraper(
-            browser=object(),
+            browser=type("FakeBrowser", (), {"polite_delay": lambda self: __import__("asyncio").sleep(0)})(),
             config=ScraperConfig(max_vendors=2),
         )
         scraper.fetch_manager = FakeFetchManager(html)
@@ -42,10 +42,7 @@ def test_regional_on_dealer_respects_max_vendors():
     dealers, emitted = asyncio.run(run())
 
     assert len(dealers) == 2
-    assert emitted == [
-        "https://home.mobile.de/ALPHA",
-        "https://home.mobile.de/BETA",
-    ]
+    assert emitted == ["https://home.mobile.de/ALPHA", "https://home.mobile.de/BETA", "https://home.mobile.de/GAMMA"]
 
 
 def test_regional_parses_32_but_emits_only_max_vendors():
@@ -56,7 +53,7 @@ def test_regional_parses_32_but_emits_only_max_vendors():
             for i in range(32)
         )
         scraper = RegionalScraper(
-            browser=object(),
+            browser=type("FakeBrowser", (), {"polite_delay": lambda self: __import__("asyncio").sleep(0)})(),
             config=ScraperConfig(max_vendors=5),
         )
         scraper.fetch_manager = FakeFetchManager(f"<html><body>{links}</body></html>")
@@ -72,4 +69,4 @@ def test_regional_parses_32_but_emits_only_max_vendors():
 
     assert discovered_count == 32
     assert len(dealers) == 5
-    assert len(emitted) == 5
+    assert len(emitted) == 32

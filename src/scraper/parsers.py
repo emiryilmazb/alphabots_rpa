@@ -211,6 +211,38 @@ KNOWN_SPEC_LABELS = {
 }
 
 
+SPEC_LABEL_ALIASES = {
+    "CO2-Emissionen": "CO₂-Emissionen",
+    "CO₂ Emissionen": "CO₂-Emissionen",
+    "CO2 Emissionen": "CO₂-Emissionen",
+    "CO₂-Ausstoß": "CO₂-Emissionen",
+    "CO2-Ausstoß": "CO₂-Emissionen",
+    "Fahrzeughalter": "Anzahl der Fahrzeughalter",
+    "Vorbesitzer": "Anzahl der Fahrzeughalter",
+    "Anzahl Vorbesitzer": "Anzahl der Fahrzeughalter",
+    "Anzahl der Vorbesitzer": "Anzahl der Fahrzeughalter",
+    "Modellreihe": "Baureihe",
+    "Series": "Baureihe",
+    "Ausstattungslinie": "Ausstattungslinie",
+    "Trim": "Ausstattungslinie",
+    "Line": "Ausstattungslinie",
+    "Edition": "Ausstattungslinie",
+}
+
+
+DETAIL_TARGET_FIELDS = [
+    "CO₂-Emissionen",
+    "Baureihe",
+    "Ausstattungslinie",
+    "Anzahl der Fahrzeughalter",
+    "Hubraum",
+    "Anzahl der Türen",
+    "Schadstoffklasse",
+    "Farbe",
+    "Anzahl Sitzplätze",
+]
+
+
 def clean_text(value: Any) -> str:
     """Normalize whitespace while preserving German characters."""
     if value is None:
@@ -999,8 +1031,11 @@ def _summary_from_search_result_listing(listing: dict[str, Any]) -> dict[str, st
         "Anzahl der Fahrzeughalter": _first_present(
             attr.get("owners"),
             attr.get("owner"),
+            attr.get("pvo"),
             attr.get("pv"),
             attr.get("vehicleOwners"),
+            attr.get("previousOwners"),
+            attr.get("numberOfOwners"),
         ),
         "Fahrzeugtyp_Raw": _first_present(listing.get("category"), attr.get("c")),
         "Vehicle_Category": _first_present(listing.get("vc"), listing.get("segment")),
@@ -1293,6 +1328,7 @@ def parse_vehicle_title(html: str) -> tuple[str, str]:
                 break
     if not title:
         return "", ""
+    title = _strip_price_from_title(title)
 
     for brand in sorted(KNOWN_BRANDS, key=len, reverse=True):
         if title.lower().startswith(brand.lower()):
@@ -1305,6 +1341,10 @@ def _strip_brand(title: str, brand: str) -> str:
     if title.lower().startswith(brand.lower()):
         return clean_text(title[len(brand) :])
     return title
+
+
+def _strip_price_from_title(title: str) -> str:
+    return clean_text(re.sub(r"\s+für\s+\d[\d.]*,?\d*\s*€.*$", "", title, flags=re.I))
 
 
 def parse_vehicle_price(html: str) -> str:
@@ -1340,8 +1380,10 @@ def parse_vehicle_specs(html: str) -> dict[str, str]:
     _extract_dl_pairs(soup, specs)
     _extract_table_pairs(soup, specs)
     _extract_known_label_pairs(soup, specs)
+    _extract_initial_state_specs(html, specs)
     _extract_from_next_text(html, specs)
     _extract_quick_stats(clean_text(soup.get_text(" ", strip=True)), specs)
+    _extract_description_line_specs(soup, specs)
 
     if "CO2-Emissionen" in specs and "CO₂-Emissionen" not in specs:
         specs["CO₂-Emissionen"] = specs["CO2-Emissionen"]
@@ -1371,15 +1413,19 @@ def _extract_table_pairs(soup: BeautifulSoup, specs: dict[str, str]) -> None:
 
 def _extract_known_label_pairs(soup: BeautifulSoup, specs: dict[str, str]) -> None:
     elements = list(soup.find_all(True))
-    labels_lower = {label.lower(): label for label in KNOWN_SPEC_LABELS}
+    labels_lower = {_canonical_spec_label(label).lower(): _canonical_spec_label(label) for label in KNOWN_SPEC_LABELS}
     for index, elem in enumerate(elements):
         text = clean_text(elem.get_text(" ", strip=True)).rstrip(":")
-        canonical = labels_lower.get(text.lower())
+        canonical = _canonical_spec_label(text)
         if not canonical:
-            for label in KNOWN_SPEC_LABELS:
-                if text.startswith(label) and len(text) > len(label):
+            for raw_label in [*KNOWN_SPEC_LABELS, *SPEC_LABEL_ALIASES]:
+                label = _canonical_spec_label(raw_label) or raw_label
+                if not label:
+                    continue
+                match = re.match(rf"^{re.escape(raw_label)}\s*[:\-]\s*(.+)$", text, re.I)
+                if match:
                     canonical = label
-                    value = text[len(label) :].strip(" :")
+                    value = match.group(1).strip(" :")
                     _add_spec(specs, canonical, value)
                     break
             continue
@@ -1394,6 +1440,71 @@ def _extract_known_label_pairs(soup: BeautifulSoup, specs: dict[str, str]) -> No
         _add_spec(specs, canonical, value)
 
 
+def _extract_initial_state_specs(html: str, specs: dict[str, str]) -> None:
+    state = _extract_window_initial_state(html)
+    if not state:
+        return
+    for obj in iter_dicts(state):
+        label = _none_if_placeholder(obj.get("label"))
+        value = _none_if_placeholder(obj.get("value"))
+        if label and value:
+            _add_spec(specs, label, value)
+        tag = _none_if_placeholder(obj.get("tag"))
+        tag_mapping = {
+            "modelRange": "Baureihe",
+            "trimLine": "Ausstattungslinie",
+            "line": "Ausstattungslinie",
+            "edition": "Ausstattungslinie",
+            "numberOfPreviousOwners": "Anzahl der Fahrzeughalter",
+            "cubicCapacity": "Hubraum",
+            "doorCount": "Anzahl der Türen",
+            "emissionClass": "Schadstoffklasse",
+            "manufacturerColorName": "Farbe (Hersteller)",
+            "color": "Farbe",
+            "numSeats": "Anzahl Sitzplätze",
+            "envkv.co2Emissions": "CO₂-Emissionen",
+            "co2Emissions": "CO₂-Emissionen",
+            "co2Emission": "CO₂-Emissionen",
+        }
+        if tag and value and tag in tag_mapping:
+            _add_spec(specs, tag_mapping[tag], value)
+
+
+def _extract_window_initial_state(html: str) -> dict[str, Any]:
+    marker = "window.__INITIAL_STATE__"
+    start_marker = html.find(marker)
+    if start_marker < 0:
+        return {}
+    start = html.find("{", start_marker)
+    if start < 0:
+        return {}
+    level = 0
+    in_string = False
+    escaped = False
+    for index, char in enumerate(html[start:], start):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            level += 1
+        elif char == "}":
+            level -= 1
+            if level == 0:
+                try:
+                    data = json.loads(html[start : index + 1])
+                except json.JSONDecodeError:
+                    return {}
+                return data if isinstance(data, dict) else {}
+    return {}
+
+
 def _extract_from_next_text(html: str, specs: dict[str, str]) -> None:
     # Decode Next payload strings and scan them as text. This catches listing
     # attributes that are not emitted as visible DOM in static HTML snapshots.
@@ -1406,11 +1517,12 @@ def _extract_from_next_text(html: str, specs: dict[str, str]) -> None:
     _extract_quick_stats(text, specs)
 
     for label in KNOWN_SPEC_LABELS:
-        if label in specs:
+        canonical = _canonical_spec_label(label) or label
+        if canonical in specs:
             continue
-        match = re.search(rf"{re.escape(label)}\s*[:\-]?\s*([^|•]{{1,80}})", text)
+        match = re.search(rf"{re.escape(label)}\s*[:\-]\s*([^|•]{{1,80}})", text)
         if match:
-            _add_spec(specs, label, clean_text(match.group(1)))
+            _add_spec(specs, canonical, clean_text(match.group(1)))
 
 
 def _extract_quick_stats(text: str, specs: dict[str, str]) -> None:
@@ -1422,7 +1534,7 @@ def _extract_quick_stats(text: str, specs: dict[str, str]) -> None:
         (r"\bErstzulassung\s*[:\-]?\s*(\d{2}/\d{4})", "Erstzulassung"),
         (r"\b(Benzin|Diesel|Elektro|Hybrid|Erdgas|Autogas|Wasserstoff)\b", "Kraftstoffart"),
         (r"\b(Automatik|Schaltgetriebe|Halbautomatik)\b", "Getriebe"),
-        (r"\b(\d+\s*g/km)\b", "CO₂-Emissionen"),
+        (r"\b(\d+\s*g\s*/?\s*km)\b", "CO₂-Emissionen"),
         (r"\b(\d+[.,]?\d*\s*cm³)\b", "Hubraum"),
     ]
     for pattern, key in patterns:
@@ -1433,15 +1545,99 @@ def _extract_quick_stats(text: str, specs: dict[str, str]) -> None:
             specs[key] = clean_text(match.group(1))
 
 
+def _extract_description_line_specs(soup: BeautifulSoup, specs: dict[str, str]) -> None:
+    if specs.get("Ausstattungslinie"):
+        return
+    text = clean_text(soup.get_text(" ", strip=True))
+    patterns = [
+        r"\bDesign-\s*und\s*Ausstattungslinie\s+([^.;,\n|•<]{2,80})",
+        r"\bAusstattungslinie\s+([^.;,\n|•<]{2,80})",
+        r"\b(?:AMG|S\s*line|M\s*Sport|R-Line|Edition)\s+[A-Za-z0-9][^.;,\n|•<]{0,60}",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.I)
+        if not match:
+            continue
+        value = match.group(1) if match.lastindex else match.group(0)
+        value = re.split(r"\s+(?:[A-Z]\d{2,3}|\d{3}[A-Z]?|[A-Z]{2,4}\d?)\s+", value, maxsplit=1)[0]
+        value = re.split(r"\s+[A-Za-z0-9-]*Paket\b|\s+Exterieur\b|\s+Interieur\b", value, maxsplit=1, flags=re.I)[0]
+        value = re.sub(r"\b(?:Paket|Exterieur|Interieur|Sicherheit)\b.*$", "", value, flags=re.I)
+        value = clean_text(value).strip(" -")
+        if value and value.lower() not in {"und -pakete", "ausstattungslinien und -pakete"}:
+            _add_spec(specs, "Ausstattungslinie", value)
+            return
+
+
 def _add_spec(specs: dict[str, str], label: str, value: str) -> None:
-    label = clean_text(label).rstrip(":")
+    label = _canonical_spec_label(label)
     value = clean_text(value)
     if not label or not value:
+        return
+    if re.fullmatch(r"[-–—]+\s*(?:g\s*/?\s*km|cm³|ccm)?", value, re.I):
         return
     if label not in KNOWN_SPEC_LABELS:
         return
     if label not in specs or not specs[label]:
         specs[label] = value
+
+
+def _canonical_spec_label(label: str) -> str:
+    label = clean_text(label).rstrip(":")
+    if not label:
+        return ""
+    lowered = label.lower()
+    if lowered.startswith(("co₂-emissionen", "co2-emissionen", "co₂ emissionen", "co2 emissionen")):
+        return "CO₂-Emissionen"
+    if label in KNOWN_SPEC_LABELS:
+        return SPEC_LABEL_ALIASES.get(label, label)
+    alias_map = {key.lower(): value for key, value in SPEC_LABEL_ALIASES.items()}
+    if lowered in alias_map:
+        return alias_map[lowered]
+    for known in KNOWN_SPEC_LABELS:
+        if lowered == known.lower():
+            return known
+    return ""
+
+
+def parse_vehicle_detail_fields(html: str) -> dict[str, str]:
+    """Return normalized vehicle fields parsed from one detail-page HTML snapshot."""
+    fields: dict[str, str] = {}
+    brand, model = parse_vehicle_title(html)
+    if brand:
+        fields["Markes"] = brand
+    if model:
+        fields["Models"] = model
+    price = parse_vehicle_price(html)
+    if price:
+        fields["Preis"] = price
+    specs = parse_vehicle_specs(html)
+    spec_mapping = {
+        "Fahrzeugzustand": "Fahrzeugzustand",
+        "Kategorie": "Fahrzeugtyp",
+        "Kilometerstand": "Kilometerstand",
+        "Kraftstoffart": "Kraftstoffart",
+        "CO₂-Emissionen": "CO₂-Emissionen",
+        "Leistung": "Leistung",
+        "Anzahl Sitzplätze": "Anzahl Sitzplätze",
+        "Getriebe": "Getriebe",
+        "Schadstoffklasse": "Schadstoffklasse",
+        "Farbe": "Farbe",
+        "Baureihe": "Baureihe",
+        "Ausstattungslinie": "Ausstattungslinie",
+        "Hubraum": "Hubraum",
+        "Anzahl der Türen": "Anzahl der Türen",
+        "Anzahl der Fahrzeughalter": "Anzahl der Fahrzeughalter",
+        "Erstzulassung": "Erstzulassung",
+    }
+    for spec_key, field_key in spec_mapping.items():
+        value = specs.get(spec_key, "")
+        if value:
+            fields[field_key] = value
+    financing = parse_financing_data(html)
+    fields.update(financing)
+    if fields.get("Financing") and not fields.get("Finanzierung"):
+        fields["Finanzierung"] = fields["Financing"]
+    return fields
 
 
 def parse_financing_data(html: str) -> dict[str, str]:
@@ -1470,7 +1666,7 @@ def parse_financing_data(html: str) -> dict[str, str]:
     for label, key in labels.items():
         if key in financing:
             continue
-        match = re.search(rf"{re.escape(label)}\s*[:\-]?\s*([^|•]{{1,80}})", text, re.I)
+        match = re.search(rf"(?:^|\s){re.escape(label)}\s*[:]\s*([^|•]{{1,80}})", text, re.I)
         if match:
             financing[key] = clean_text(match.group(1))
 
@@ -1478,8 +1674,6 @@ def parse_financing_data(html: str) -> dict[str, str]:
         match = re.search(r"(?:Finanzierung|Rate)\s*(?:ab)?\s*(\d[\d.,]*\s*€\s*(?:mtl\.?|monatlich)?)", text, re.I)
         if match:
             financing["Financing"] = clean_text(match.group(1))
-        elif "Finanzierung" in text:
-            financing["Financing"] = "Finanzierungsangebot"
     return financing
 
 

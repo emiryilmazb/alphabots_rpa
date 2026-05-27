@@ -46,7 +46,7 @@ class RegionalScraper:
 
         while True:
             # Check page limit
-            if self.config.max_pages_per_state > 0 and page_num >= self.config.max_pages_per_state:
+            if (self.config.max_pages_per_state > 0 and page_num >= self.config.max_pages_per_state) or (getattr(self.config, "max_regional_pages", 0) > 0 and page_num >= getattr(self.config, "max_regional_pages", 0)):
                 logger.info("Page limit reached (%d pages).", self.config.max_pages_per_state)
                 break
 
@@ -88,8 +88,6 @@ class RegionalScraper:
                     discovered_urls.add(d["url"])
                     self.last_discovered_count = len(discovered_urls)
                 if d["url"] not in seen_urls:
-                    if self.config.max_vendors > 0 and len(all_dealers) >= self.config.max_vendors:
-                        continue
                     seen_urls.add(d["url"])
                     limited_dealer = dict(d)
                     all_dealers.append(limited_dealer)
@@ -105,14 +103,14 @@ class RegionalScraper:
                 logger.info("No new dealers on page %d. Stopping.", page_num)
                 break
 
-            # Check vendor limit
-            if self.config.max_vendors > 0 and len(all_dealers) >= self.config.max_vendors:
-                all_dealers = all_dealers[:self.config.max_vendors]
-                logger.info("Vendor limit reached (%d vendors).", self.config.max_vendors)
-                break
 
             page_num += 1
             await self.browser.polite_delay()
+
+
+        if self.config.max_vendors > 0 and len(all_dealers) > self.config.max_vendors:
+            logger.info("Applying max-vendors limit: reducing from %d to %d", len(all_dealers), self.config.max_vendors)
+            all_dealers = all_dealers[:self.config.max_vendors]
 
         logger.info(
             "Regional scraping complete: %d unique dealers discovered; %d selected for processing.",

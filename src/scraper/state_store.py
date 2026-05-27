@@ -172,7 +172,7 @@ class StateStore:
                     "SELECT haendler_id, status, run_id FROM vendors WHERE normalized_vendor_url = ?",
                     (url,),
                 ).fetchone()
-                haendler_id = existing["haendler_id"] if existing else f"C{next_id:07d}"
+                haendler_id = existing["haendler_id"] if existing else f"C{dealer.get('global_index', next_id):07d}"
                 if not existing:
                     next_id += 1
                 status = existing["status"] if existing else STATUS_QUEUED

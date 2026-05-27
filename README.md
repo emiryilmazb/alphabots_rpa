@@ -15,6 +15,7 @@ The scraper collects dealer data, vehicle listing data, financing data where exp
 - Uses a SQLite-backed producer-consumer pipeline for bounded vendor and vehicle work.
 - Traverses dealer inventory categories and enforces vendor/car caps for controlled benchmarks.
 - Extracts rich listing-card data from mobile.de Next.js payloads, including many financing fields from listing payloads.
+- Offers an optional `uc-popup` detail enrichment strategy for small, controlled runs that need fields only visible on real mobile.de detail pages.
 - Generates raw exports, processed exports, Excel dashboard workbook, Word methodology/report document, and structured error records.
 
 Strict headless is technically supported but currently blocked by mobile.de in this environment. Docker/Xvfb is the recommended server-compatible execution mode.
@@ -52,10 +53,34 @@ Local small test:
 venv\Scripts\python.exe -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --browser-mode headed --fetch-strategy auto --detail-policy missing-required --detail-max-retries 1 --max-vendors 5 --max-cars-per-vendor 5 --vendor-concurrency 1 --vehicle-detail-concurrency 2 --benchmark
 ```
 
-Docker/Xvfb server mode:
+Local source audit and detail strategy matrix:
 
 ```powershell
-docker compose run --rm -e BROWSER_MODE=xvfb scraper python -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --browser-mode xvfb --fetch-strategy auto --detail-policy missing-required --detail-max-retries 1 --max-vendors 10 --max-cars-per-vendor 5 --vendor-concurrency 1 --vehicle-detail-concurrency 1 --benchmark
+venv\Scripts\python.exe -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --browser-mode headed --fetch-strategy auto --source-audit --source-audit-only --source-audit-max-vendors 2 --source-audit-max-vehicles 3
+```
+
+Isolated UC popup detail test:
+
+```powershell
+venv\Scripts\python.exe tools\detail_lab_uc_popup_pipeline_test.py --max-vehicles 2 --output-dir data\runs\detail_lab_uc_popup_pipeline_test --browser-mode headed
+```
+
+Local UC popup small smoke:
+
+```powershell
+venv\Scripts\python.exe -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --browser-mode headed --fetch-strategy auto --detail-policy missing-required --detail-open-strategy uc-popup --detail-max-retries 1 --max-vendors 2 --max-cars-per-vendor 3 --vendor-concurrency 1 --vehicle-detail-concurrency 1 --benchmark --clean-run true
+```
+
+Docker/Xvfb server mode with stable listing fallback:
+
+```powershell
+docker compose run --rm -e BROWSER_MODE=xvfb scraper python -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --browser-mode xvfb --fetch-strategy auto --detail-policy missing-required --detail-open-strategy listing-only --detail-max-retries 1 --max-vendors 10 --max-cars-per-vendor 5 --vendor-concurrency 1 --vehicle-detail-concurrency 1 --benchmark
+```
+
+Docker/Xvfb UC popup compatibility smoke:
+
+```powershell
+docker compose run --rm -e BROWSER_MODE=xvfb scraper python -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --browser-mode xvfb --fetch-strategy auto --detail-policy missing-required --detail-open-strategy uc-popup --detail-max-retries 1 --max-vendors 2 --max-cars-per-vendor 3 --vendor-concurrency 1 --vehicle-detail-concurrency 1 --benchmark --clean-run true
 ```
 
 Final larger run, only if approved:
@@ -74,6 +99,21 @@ Docker/Xvfb mode is the recommended server-compatible mode. It runs a headed bro
 
 Strict headless mode remains available via `--browser-mode headless`, but it is not the recommended production path for this target because mobile.de currently blocks strict headless in this environment.
 
+## UC Popup Detail Strategy
+
+`--detail-open-strategy uc-popup` is an optional enrichment strategy for fields that are often missing from listing payloads: CO₂-Emissionen, Baureihe, Ausstattungslinie, Anzahl der Fahrzeughalter, Hubraum, Türen, Schadstoffklasse, Farbe, and Sitzplätze. It is intended for small missing-detail runs, not broad benchmarks.
+
+The default stable pipeline remains listing-first. UC popup is only used when `--detail-open-strategy uc-popup` is explicitly passed. It requires:
+
+- `undetected_chromedriver`
+- `selenium`
+- `setuptools` on Python 3.12 runtimes because the current UC package imports `distutils`
+- a local Google Chrome installation
+
+The strategy opens the current vendor/category page, collects live mobile.de detail links from the rendered page or listing payload, matches the current vehicle by URL or vehicle id, opens the matched detail in a new tab, switches to the new tab, classifies the resulting page, and only merges detail values into empty listing fields. Existing listing values are not overwritten. If the live link is stale, unavailable, redirects home, opens an error page, or the popup cannot be captured, the scraper records the reason and keeps the listing fallback row.
+
+Run UC popup with `--vehicle-detail-concurrency 1`. The output metrics include `detail_open_strategy`, `popup_opened_count`, `popup_captured_count`, `popup_capture_failed_count`, `wrong_tab_capture_count`, `real_detail_page_loaded_count`, `detail_home_redirect_count`, `detail_error_page_count`, `stale_redirect_count`, `uc_popup_success_count`, `uc_popup_failed_count`, and `detail_target_fields_extracted_count`.
+
 ## CLI Options
 
 | Option | Default | Purpose |
@@ -85,6 +125,11 @@ Strict headless mode remains available via `--browser-mode headless`, but it is 
 | `--browser-mode` | `headed` | `headless`, `headed`, or `xvfb` |
 | `--fetch-strategy` | `auto` | `auto`, `curl`, or `playwright` |
 | `--detail-policy` | `missing-required` | `always`, `missing-required`, `financing-only`, or `never` |
+| `--detail-open-strategy` | `auto` | `auto`, `listing-only`, `playwright-direct`, `playwright-click`, or `uc-popup`; legacy aliases are accepted |
+| `--source-audit` | `false` | Save tiny-sample raw source artifacts, network logs, and detail strategy matrix evidence |
+| `--source-audit-only` | `false` | Run only source audit/matrix and skip normal exports |
+| `--source-audit-max-vendors` | `2` | Max vendors inspected by source audit |
+| `--source-audit-max-vehicles` | `5` | Max vehicle detail URLs tested by source audit |
 | `--max-vendors` | `0` | Vendor cap; `0` means uncapped |
 | `--max-cars-per-vendor` | `0` | Vehicle cap per vendor; `0` means uncapped |
 | `--vendor-concurrency` | `1` | Vendor worker count |
@@ -116,6 +161,8 @@ data/runs/<run_id>/output/mobile_de_nrw_report.docx
 data/runs/<run_id>/output/errors.csv
 data/runs/<run_id>/output/errors.json
 data/runs/<run_id>/output/benchmark_summary.json
+data/runs/<run_id>/source_audit/source_audit_summary.json
+data/runs/<run_id>/source_audit/detail_strategy_matrix.json
 ```
 
 Root `data/raw`, `data/state`, and `data/output` are not overwritten during guarded run-folder execution.
@@ -154,6 +201,7 @@ The Word report documents:
 - Docker/Xvfb server-compatible execution
 - strict headless limitation
 - detail-page/source limitation
+- source audit and detail strategy matrix results when `--source-audit` is used
 - classification methodology
 - dashboard findings
 - run summary
@@ -188,10 +236,17 @@ Schema completeness is guaranteed; source completeness is measured.
 
 Status values:
 
-- `satisfied`: column/extractor exist and source coverage is acceptable in the run
-- `partially_satisfied`: column/extractor exist but source values are sparse
+- `satisfied`: column/extractor exist and coverage is at least 85%
+- `partially_satisfied`: column/extractor exist and coverage is 50-84%
+- `weak`: column/extractor exist and coverage is 1-49%
 - `schema_only`: column/extractor exist but current coverage is 0%
 - `missing`: required column or extractor is absent
+
+## Source Audit
+
+`--source-audit` is a bounded evidence mode for the detail-dependent fields. It saves returned public source artifacts under `data/runs/<run_id>/source_audit/`, including vendor/category HTML, Next.js payloads, listing-card payloads, visible card text, detail attempt HTML/screenshots/headers, network response indexes, discovered API endpoints, and a detail strategy matrix.
+
+The matrix tests direct URL, persistent context, same-context, category navigation, listing click, modifier click, delayed click, warmup click, and small browser-channel variations on a tiny sample. A strategy is only counted as useful when it extracts real source values for the target fields; filter labels or search facets are rejected.
 
 ## Classification
 
@@ -216,7 +271,11 @@ The final classification uses the task-defined values. Literal `Unknown`/`Other`
 
 ## Known Limitations
 
-Some vehicle detail fields such as CO₂-Emissionen, Baureihe, Ausstattungslinie, and Anzahl der Fahrzeughalter showed low source coverage because mobile.de detail pages returned site-side 403/503 responses. These values are not guessed and are reported transparently in Data_Coverage and Requirements_Compliance.
+Some vehicle detail fields such as CO₂-Emissionen, Baureihe, Ausstattungslinie, and Anzahl der Fahrzeughalter can still show low source coverage because mobile.de does not expose them in every listing payload and detail access can fail. These values are not guessed and are reported transparently in Data_Coverage and Requirements_Compliance.
+
+Targeted source audit found that some listing payloads expose previous-owner count as `attr.pvo`; the parser maps this real source value to `Anzahl der Fahrzeughalter`. The optional UC popup strategy can increase measured coverage for CO₂-Emissionen, Baureihe, and Ausstattungslinie when mobile.de returns a real detail page for a live listing.
+
+UC popup is slower than listing extraction and should be run with detail concurrency 1. If the dependency stack is unavailable, the run records `uc_dependency_missing` with the message `uc-popup strategy requires undetected_chromedriver and local Chrome.` and preserves listing fallback output.
 
 Financing fields are populated only when mobile.de exposes a financing offer in the listing payload or detail source. Dealer homepage, second phone, mobile phone, and fax fields can be sparse because not every dealer publishes those values.
 
@@ -237,6 +296,7 @@ The project is not 1:1 source-complete because mobile.de does not expose every r
 - Word generated
 - `Requirements_Compliance` present
 - `Data_Coverage` present
+- source audit evidence present when `--source-audit` is used
 - `Errors` present
 - No literal `Unknown`/`Other` in final classifications
 - Detail limitations documented

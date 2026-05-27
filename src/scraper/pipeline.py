@@ -11,7 +11,11 @@ from typing import Any
 from src.config import ScraperConfig
 from src.models import VEHICLE_COLUMNS
 from src.scraper.browser import BrowserManager, _is_target_closed_error
-from src.scraper.detail_policy import is_real_vehicle_detail_url, should_fetch_vehicle_detail
+from src.scraper.detail_policy import (
+    is_real_vehicle_detail_url,
+    missing_detail_enrichment_fields,
+    should_fetch_vehicle_detail,
+)
 from src.scraper.parsers import normalize_dealer_url
 from src.scraper.regional_scraper import RegionalScraper
 from src.scraper.state_store import (
@@ -155,6 +159,11 @@ class RegionalDiscoveryProducer:
             )
         finally:
             await browser.close()
+            try:
+                if 'vehicle_scraper' in locals() and hasattr(vehicle_scraper, 'uc_popup_fetcher'):
+                    vehicle_scraper.uc_popup_fetcher.close()
+            except Exception:
+                pass
 
 
 class VendorWorker:
@@ -208,6 +217,11 @@ class VendorWorker:
                     self.vendor_queue.task_done()
         finally:
             await browser.close()
+            try:
+                if 'vehicle_scraper' in locals() and hasattr(vehicle_scraper, 'uc_popup_fetcher'):
+                    vehicle_scraper.uc_popup_fetcher.close()
+            except Exception:
+                pass
 
     async def _process_job_with_recovery(
         self,
@@ -370,6 +384,11 @@ class VehicleDetailWorker:
                     self.vehicle_queue.task_done()
         finally:
             await browser.close()
+            try:
+                if 'vehicle_scraper' in locals() and hasattr(vehicle_scraper, 'uc_popup_fetcher'):
+                    vehicle_scraper.uc_popup_fetcher.close()
+            except Exception:
+                pass
 
     async def _get_next_job(self, browser: BrowserManager) -> VehicleJob | None:
         idle_timeout = float(getattr(self.config, "idle_browser_timeout_seconds", 0) or 0)
@@ -454,16 +473,20 @@ class VehicleDetailWorker:
         try:
             _increment_config_counter(self.config, "vehicle_detail_jobs_total")
             detail_needed = should_fetch_vehicle_detail(self.config, job.vehicle_url, job.fallback)
+            _record_uc_popup_decision(self.config, job.vehicle_url, job.fallback, detail_needed)
             if not detail_needed:
                 _increment_config_counter(self.config, "detail_skipped_count")
                 vehicle = _vehicle_from_fallback(job.vendor_info, job.vehicle_url, job.fallback)
             else:
                 _increment_config_counter(self.config, "detail_needed_count")
                 _increment_config_counter(self.config, "detail_attempted_count")
+                if getattr(self.config, "detail_open_strategy", "") == "uc-popup":
+                    _increment_config_counter(self.config, "uc_popup_attempted_count")
+                fallback = {**job.fallback, "source_vendor_url": job.normalized_vendor_url}
                 vehicle = await vehicle_scraper.scrape_vehicle(
                     job.vehicle_url,
                     job.vendor_info,
-                    job.fallback,
+                    fallback,
                 )
                 status_code = _detail_status_code(browser, vehicle)
                 error_msg = getattr(browser, 'last_error', '')
@@ -498,9 +521,16 @@ class VehicleDetailWorker:
                             "fetch_strategy": vehicle.get("fetch_strategy", ""),
                             "browser": browser.config.browser,
                             "error_type": "detail_site_blocked_or_503" if "edgesuite" in error_msg.lower() or status_code in {403, 503} else "detail_fetch_failed",
+                            "detail_open_strategy": self.config.detail_open_strategy,
+                            "detail_status": vehicle.get("detail_status", ""),
+                            "detail_failure_reason": vehicle.get("detail_failure_reason", ""),
+                            "html_dump_path": vehicle.get("detail_artifact_html_path", ""),
+                            "screenshot_path": vehicle.get("detail_artifact_screenshot_path", ""),
                         }
                     )
-                    vehicle = _vehicle_from_fallback(job.vendor_info, job.vehicle_url, job.fallback)
+                    fallback_vehicle = _vehicle_from_fallback(job.vendor_info, job.vehicle_url, job.fallback)
+                    _copy_detail_metadata(fallback_vehicle, vehicle)
+                    vehicle = fallback_vehicle
                 else:
                     _increment_config_counter(self.config, "detail_success_count")
             vehicle["run_id"] = self.run_id
@@ -676,7 +706,24 @@ def _detail_request_failed(browser: BrowserManager, vehicle: dict[str, Any] | No
         for key in ["fetch_fallback_reason", "parse_status", "fetch_status"]
     ).lower()
     combined = f"{last_error} {vehicle_error}"
-    return "access denied" in combined or "site protection" in combined
+    if "access denied" in combined or "site protection" in combined:
+        return True
+    vehicle = vehicle or {}
+    if str(vehicle.get("fetch_strategy", "")) == "uc-popup":
+        return str(vehicle.get("detail_status", "")) != "real_detail_page"
+    failed_statuses = {
+        "fetch_failed",
+        "stale_or_not_visible",
+        "stale_or_home_redirect",
+        "home_redirect",
+        "home_redirect",
+        "error_page",
+        "blank_page",
+        "wrong_tab_capture",
+        "popup_capture_failed",
+        "uc_dependency_missing",
+    }
+    return str(vehicle.get("detail_status", "")) in failed_statuses
 
 
 def _detail_status_code(browser: BrowserManager, vehicle: dict[str, Any] | None = None) -> int | None:
@@ -704,6 +751,12 @@ def _detail_failure_message(browser: BrowserManager, vehicle: dict[str, Any]) ->
     fallback_reason = str(vehicle.get("fetch_fallback_reason", "")).strip()
     if fallback_reason:
         parts.append(f"fallback_reason={fallback_reason}")
+    detail_status = str(vehicle.get("detail_status", "")).strip()
+    if detail_status:
+        parts.append(f"detail_status={detail_status}")
+    detail_failure_reason = str(vehicle.get("detail_failure_reason", "")).strip()
+    if detail_failure_reason:
+        parts.append(f"detail_failure_reason={detail_failure_reason}")
     status_code = _detail_status_code(browser, vehicle)
     if status_code:
         parts.append(f"final_status=HTTP {status_code}")
@@ -712,8 +765,49 @@ def _detail_failure_message(browser: BrowserManager, vehicle: dict[str, Any]) ->
     return " ".join(parts)
 
 
+def _copy_detail_metadata(target: dict[str, Any], source: dict[str, Any]) -> None:
+    for key in [
+        "fetch_strategy",
+        "fetch_status",
+        "fetch_fallback_reason",
+        "detail_data_source",
+        "detail_strategy_used",
+        "detail_status",
+        "detail_failure_reason",
+        "detail_artifact_html_path",
+        "detail_artifact_screenshot_path",
+        "detail_target_fields_extracted_count",
+    ]:
+        value = source.get(key)
+        if value not in (None, ""):
+            target[key] = value
+    target["vehicle_data_source"] = "listing_fallback"
+
+
 def _increment_config_counter(config: ScraperConfig, name: str, amount: int = 1) -> None:
     setattr(config, name, int(getattr(config, name, 0) or 0) + amount)
+
+
+def _record_uc_popup_decision(
+    config: ScraperConfig,
+    vehicle_url: str,
+    fallback: dict[str, Any] | None,
+    detail_needed: bool,
+) -> None:
+    if getattr(config, "detail_open_strategy", "") != "uc-popup":
+        return
+    if config.skip_vehicle_details or config.detail_policy == "never":
+        return
+    if not is_real_vehicle_detail_url(vehicle_url):
+        return
+    if config.detail_policy != "missing-required":
+        return
+
+    missing_targets = missing_detail_enrichment_fields(fallback)
+    if missing_targets and detail_needed:
+        _increment_config_counter(config, "uc_popup_eligible_count")
+    elif not missing_targets:
+        _increment_config_counter(config, "uc_popup_skipped_not_needed_count")
 
 
 def _vehicle_from_fallback(

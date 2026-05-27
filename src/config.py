@@ -32,6 +32,8 @@ class ScraperConfig:
     max_vendors: int = 0
     max_cars_per_vendor: int = 0
     max_pages_per_state: int = 0
+    discover_only: bool = False
+    max_regional_pages: int = 0
     skip_vehicle_details: bool = False
     traverse_vehicle_categories: bool = True
     category_traversal: str = "discovered"
@@ -88,6 +90,7 @@ class ScraperConfig:
     vehicle_listing_concurrency: int = 1
     vehicle_detail_concurrency: int = 1
     detail_policy: str = "missing-required"
+    detail_open_strategy: str = "auto"
     idle_browser_timeout_seconds: float = 15.0
     flush_every: int = 100
 
@@ -304,6 +307,7 @@ def parse_args() -> ScraperConfig:
     parser.add_argument("--vehicle-detail-concurrency", type=int,
                         default=int(os.getenv("VEHICLE_DETAIL_CONCURRENCY", "1")),
                         help="Concurrent vehicle detail workers for sqlite pipeline")
+    parser.add_argument("--detail-open-strategy", type=str, default="auto")
     parser.add_argument("--detail-policy", default=os.getenv("DETAIL_POLICY", "missing-required"),
                         choices=sorted(VALID_DETAIL_POLICIES),
                         help="When vehicle detail pages are fetched after listing/card parsing")
@@ -385,6 +389,7 @@ def parse_args() -> ScraperConfig:
         vehicle_listing_concurrency=args.vehicle_listing_concurrency,
         vehicle_detail_concurrency=args.vehicle_detail_concurrency,
         detail_policy=args.detail_policy,
+        detail_open_strategy=getattr(args, "detail_open_strategy", "auto"),
         idle_browser_timeout_seconds=max(0.0, args.idle_browser_timeout_seconds),
         resume=args.resume.lower() == "true",
         clean_run=args.clean_run.lower() == "true",

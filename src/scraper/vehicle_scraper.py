@@ -10,18 +10,22 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from typing import Any
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
 from src.config import ScraperConfig
 from src.scraper.browser import BrowserManager
 from src.scraper.fetchers import FetchResult, FetchStrategyManager, StaticValidation
+from src.scraper.fetchers.uc_popup_fetcher import UcPopupFetcher
 from src.scraper.parsers import (
+    DETAIL_TARGET_FIELDS,
     clean_text,
     normalize_vehicle_url,
     parse_vehicle_title,
     parse_vehicle_price,
     parse_vehicle_specs,
+    parse_vehicle_detail_fields,
     parse_financing_data,
     parse_vehicle_listing_urls,
     parse_vehicle_listing_summaries,
@@ -53,6 +57,7 @@ class VehicleScraper:
         self.browser = browser
         self.config = config
         self.fetch_manager = FetchStrategyManager(config, browser)
+        self.uc_popup_fetcher = UcPopupFetcher(config)
         self.listing_summaries: dict[str, dict[str, str]] = {}
         self.category_metadata: dict[str, dict[str, Any]] = {}
         self.last_category_report: list[dict[str, Any]] = []
@@ -704,24 +709,65 @@ class VehicleScraper:
 
         logger.debug("Scraping vehicle: %s", vehicle_url)
 
-        fetch_result = await self.fetch_manager.fetch(
-            vehicle_url,
-            validator=self._validate_vehicle_static,
-            playwright_max_retries=getattr(self.config, "detail_max_retries", 1),
-        )
+        if self.config.detail_open_strategy == "listing-only":
+            vehicle["fetch_strategy"] = "listing_payload"
+            vehicle["vehicle_data_source"] = "listing_fallback"
+            vehicle["detail_strategy_used"] = "listing-only"
+            vehicle["detail_status"] = "listing_only"
+            return vehicle
+
+        if self.config.detail_open_strategy == "uc-popup":
+            uc_started = time.perf_counter()
+            uc_result = await asyncio.to_thread(
+                self.uc_popup_fetcher.fetch,
+                vehicle_url,
+                fallback=fallback or {},
+            )
+            self._increment_config_counter(
+                "uc_popup_total_seconds",
+                time.perf_counter() - uc_started,
+            )
+            fetch_result = uc_result.fetch_result
+        else:
+            fetch_result = await self.fetch_manager.fetch(
+                vehicle_url,
+                validator=self._validate_vehicle_static,
+                playwright_max_retries=getattr(self.config, "detail_max_retries", 1),
+            )
         if not fetch_result.ok:
             logger.warning("Failed to load vehicle page: %s", vehicle_url)
             vehicle["fetch_strategy"] = fetch_result.strategy
             vehicle["fetch_status"] = fetch_result.status_code or ""
             vehicle["fetch_fallback_reason"] = fetch_result.fallback_reason
+            vehicle["detail_strategy_used"] = self.config.detail_open_strategy
+            vehicle["detail_status"] = fetch_result.detail_status or fetch_result.classification or "fetch_failed"
+            vehicle["detail_failure_reason"] = (
+                fetch_result.failure_reason
+                or fetch_result.error_message
+                or fetch_result.error_type
+                or "fetch_failed"
+            )
+            vehicle["detail_artifact_html_path"] = fetch_result.html_dump_path
+            vehicle["detail_artifact_screenshot_path"] = fetch_result.screenshot_path
             vehicle["parse_status"] = fetch_result.error_message or "fetch_failed"
+            vehicle["vehicle_data_source"] = "listing_fallback"
             return vehicle
 
         vehicle["fetch_strategy"] = fetch_result.strategy
         vehicle["fetch_status"] = fetch_result.status_code or ""
         vehicle["fetch_fallback_reason"] = fetch_result.fallback_reason
         vehicle["parse_status"] = "ok"
-        vehicle["vehicle_data_source"] = "detail_page" if fetch_result.strategy.startswith("playwright") else "static_html"
+        vehicle["detail_strategy_used"] = self.config.detail_open_strategy
+        vehicle["detail_status"] = fetch_result.detail_status or fetch_result.classification or "real_detail_page"
+        vehicle["detail_artifact_html_path"] = fetch_result.html_dump_path
+        vehicle["detail_artifact_screenshot_path"] = fetch_result.screenshot_path
+        vehicle["vehicle_data_source"] = (
+            "detail_page_uc_popup"
+            if fetch_result.strategy == "uc-popup"
+            else "detail_page"
+            if fetch_result.strategy.startswith("playwright")
+            else "static_html"
+        )
 
         if fetch_result.strategy.startswith("playwright"):
             await asyncio.sleep(1.5)
@@ -731,61 +777,22 @@ class VehicleScraper:
         else:
             html = fetch_result.html
 
-        # 1. Parse title → Brand + Model
-        brand, model = parse_vehicle_title(html)
-        vehicle["Markes"] = brand
-        vehicle["Models"] = model
-
-        # 2. Parse price
-        vehicle["Preis"] = parse_vehicle_price(html)
-
-        # 3. Parse technical specifications
-        specs = parse_vehicle_specs(html)
-        spec_mapping = {
-            "Fahrzeugzustand": "Fahrzeugzustand",
-            "Kategorie": "Fahrzeugtyp",
-            "Kilometerstand": "Kilometerstand",
-            "Kraftstoffart": "Kraftstoffart",
-            "CO₂-Emissionen": "CO₂-Emissionen",
-            "Leistung": "Leistung",
-            "Anzahl Sitzplätze": "Anzahl Sitzplätze",
-            "Getriebe": "Getriebe",
-            "Schadstoffklasse": "Schadstoffklasse",
-            "Farbe": "Farbe",
-            "Baureihe": "Baureihe",
-            "Ausstattungslinie": "Ausstattungslinie",
-            "Hubraum": "Hubraum",
-            "Anzahl der Türen": "Anzahl der Türen",
-            "Anzahl der Fahrzeughalter": "Anzahl der Fahrzeughalter",
-            "Erstzulassung": "Erstzulassung",
-        }
-
-        for spec_key, vehicle_key in spec_mapping.items():
-            if spec_key in specs and not vehicle[vehicle_key]:
-                vehicle[vehicle_key] = specs[spec_key]
+        detail_fields = parse_vehicle_detail_fields(html)
+        detail_filled_fields = self._merge_detail_fields(vehicle, detail_fields, fetch_result.strategy)
+        target_extracted_count = sum(
+            1 for field in DETAIL_TARGET_FIELDS if clean_text(detail_fields.get(field, ""))
+        )
+        if target_extracted_count:
+            self._increment_config_counter("detail_target_fields_extracted_count", target_extracted_count)
+        elif vehicle.get("detail_status") == "real_detail_page":
+            self._increment_config_counter("detail_real_page_but_no_target_fields_count")
+        vehicle["detail_target_fields_extracted_count"] = target_extracted_count
+        vehicle["detail_fields_filled"] = ", ".join(detail_filled_fields)
+        vehicle["detail_data_source"] = fetch_result.strategy
 
         # 4. Parse inline quick-stats if we missed them from specs
-        await self._extract_inline_stats(vehicle)
-
-        # 5. Parse financing data
-        financing = parse_financing_data(html)
-        finance_mapping = {
-            "Financing": "Financing",
-            "Bank": "Bank",
-            "Darlehensvermittler": "Darlehensvermittler",
-            "Fahrzeugpreis": "Fahrzeugpreis",
-            "Anzahlung": "Anzahlung",
-            "Jährliche Kilometerleistung": "Jährliche Kilometerleistung",
-            "Schlussrate": "Schlussrate",
-            "Fester Sollzins p.a.": "Fester Sollzins p.a.",
-            "Effektiver Jahreszins": "Effektiver Jahreszins",
-            "Gesamtzins": "Gesamtzins",
-            "Gesamtbetrag": "Gesamtbetrag",
-            "Laufzeit": "Laufzeit",
-        }
-        for fin_key, vehicle_key in finance_mapping.items():
-            if fin_key in financing:
-                vehicle[vehicle_key] = financing[fin_key]
+        if fetch_result.strategy.startswith("playwright"):
+            await self._extract_inline_stats(vehicle)
         if vehicle.get("Financing") and not vehicle.get("Finanzierung"):
             vehicle["Finanzierung"] = vehicle["Financing"]
 
@@ -798,6 +805,37 @@ class VehicleScraper:
         for key, value in fallback.items():
             if value and not vehicle.get(key):
                 vehicle[key] = value
+
+    def _merge_detail_fields(
+        self,
+        vehicle: dict[str, Any],
+        detail_fields: dict[str, str],
+        source: str,
+    ) -> list[str]:
+        filled: list[str] = []
+        conflicts: dict[str, dict[str, str]] = {}
+        for key, value in detail_fields.items():
+            if not value or key not in vehicle:
+                continue
+            if not vehicle.get(key):
+                vehicle[key] = value
+                filled.append(key)
+                vehicle[f"{key}_source"] = source
+                continue
+            if clean_text(vehicle.get(key, "")) != clean_text(value):
+                conflicts[key] = {"listing": clean_text(vehicle.get(key, "")), "detail": clean_text(value)}
+        if conflicts:
+            vehicle["detail_conflicts_json"] = str(conflicts)
+        if source == "uc-popup" and filled:
+            self._increment_config_counter("fields_added_by_uc_popup_count", len(filled))
+        return filled
+
+    def _increment_config_counter(self, name: str, amount: int | float = 1) -> None:
+        current = getattr(self.config, name, 0) or 0
+        if isinstance(amount, float) or isinstance(current, float):
+            setattr(self.config, name, float(current) + float(amount))
+        else:
+            setattr(self.config, name, int(current) + int(amount))
 
     async def _expand_tech_data(self) -> None:
         """Click 'Mehr anzeigen' to expand the full technical data table."""

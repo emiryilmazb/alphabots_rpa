@@ -82,10 +82,10 @@ def generate_word_report(
 
     _section(doc, "4. Headless and Cloud Execution")
     doc.add_paragraph(
-        "The scraper supports local headed execution, strict headless execution, Firefox/Chrome selection, "
-        "and Docker/Linux server execution with Xvfb. Strict headless mode is supported where the website "
-        "serves the page normally. If a page is unavailable or returns access denied, the failure is recorded "
-        "with status/debug metadata and reflected in coverage metrics."
+        "The scraper supports local headed execution, Firefox/Chrome selection, and Docker/Xvfb server-compatible "
+        "execution. Strict headless is technically supported but currently blocked by mobile.de in this environment. "
+        "Docker/Xvfb is the recommended server-compatible execution mode. If a page is unavailable or returns access "
+        "denied, the failure is recorded with status/debug metadata and reflected in coverage metrics."
     )
 
     _section(doc, "5. Fields Collected")
@@ -128,11 +128,24 @@ def generate_word_report(
     )
     doc.add_paragraph("Unavailable source values are not guessed.")
     doc.add_paragraph("Schema completeness is guaranteed; source completeness is measured.")
-    doc.add_paragraph(
-        "Some vehicle detail fields such as CO₂-Emissionen, Baureihe, Ausstattungslinie, and Anzahl der Fahrzeughalter showed low source coverage because mobile.de detail pages returned site-side 403/503 responses. These values are not guessed and are reported transparently in Data_Coverage and Requirements_Compliance."
-    )
+    if str(run_summary.get("detail_open_strategy", "")).lower() == "uc-popup":
+        doc.add_paragraph(
+            "The optional uc-popup detail enrichment opens live listing links in a popup/new tab and can extract "
+            "CO₂-Emissionen, Baureihe, Ausstattungslinie, and Anzahl der Fahrzeughalter from real detail pages. "
+            "It is slower than listing-payload extraction and is intended for missing-detail enrichment with "
+            "low concurrency. Absent source values remain empty and are measured in Data_Coverage and "
+            "Requirements_Compliance."
+        )
+    else:
+        doc.add_paragraph(
+            "Some vehicle detail fields such as CO₂-Emissionen, Baureihe, Ausstattungslinie, and Anzahl der "
+            "Fahrzeughalter can remain low coverage when listing payloads or reachable detail pages do not expose "
+            "values. These values are not guessed and are reported transparently in Data_Coverage and "
+            "Requirements_Compliance."
+        )
     _add_coverage_summary(doc, vendor_coverage, vehicle_coverage)
     _add_low_coverage_fields(doc, vehicle_coverage)
+    _add_source_audit_summary(doc, run_summary)
 
     _section(doc, "10. Dashboard Metrics Explanation")
     _bullets(
@@ -160,6 +173,10 @@ def generate_word_report(
         "Vehicle detail page layouts vary by vehicle category, so parsers use multiple robust fallbacks but still leave absent fields empty.",
         "A small test run with vendor/car limits is not representative of the full Nordrhein-Westfalen market.",
     ]
+    if str(run_summary.get("detail_open_strategy", "")).lower() == "uc-popup":
+        limitations.append(
+            "uc-popup detail enrichment is slower than listing-payload extraction and is recommended for targeted missing-field enrichment with concurrency 1."
+        )
     if not df_vendors.empty or not df_cars.empty:
         limitations.append("The workbook reflects the data successfully collected in this run, not a guaranteed complete live market census.")
     if errors:
@@ -202,7 +219,17 @@ def generate_word_report(
             "search_state",
             "pipeline_mode",
             "browser_mode",
+            "docker_xvfb_supported",
             "strict_headless_blocked",
+            "detail_open_strategy",
+            "source_audit_completed",
+            "source_audit_dir",
+            "source_audit_summary_path",
+            "detail_strategy_status",
+            "detail_strategy_matrix_path",
+            "detail_strategies_tested",
+            "detail_strategy_recommendation",
+            "source_audit_target_fields_found",
             "processed_vendor_count",
             "extracted_vehicle_count",
             "error_count",
@@ -213,6 +240,26 @@ def generate_word_report(
             "detail_success_count",
             "detail_failed_count",
             "listing_fallback_used_count",
+            "detail_page_loaded_count",
+            "real_detail_page_loaded_count",
+            "detail_target_fields_extracted_count",
+            "detail_real_page_but_no_target_fields_count",
+            "popup_opened_count",
+            "popup_captured_count",
+            "popup_capture_failed_count",
+            "wrong_tab_capture_count",
+            "stale_redirect_count",
+            "detail_home_redirect_count",
+            "detail_error_page_count",
+            "uc_popup_eligible_count",
+            "uc_popup_skipped_not_needed_count",
+            "uc_popup_skipped_not_applicable_count",
+            "uc_popup_attempted_count",
+            "uc_popup_success_count",
+            "uc_popup_failed_count",
+            "uc_popup_avg_seconds",
+            "fields_added_by_uc_popup_count",
+            "avg_fields_added_per_detail_success",
             "detail_fetch_403_count",
             "detail_fetch_503_count",
             "detail_fetch_failed_count",
@@ -341,3 +388,29 @@ def _add_low_coverage_fields(doc: Document, vehicle_coverage: pd.DataFrame | Non
         for _, row in low_source_rows.sort_values("field").iterrows()
     )
     doc.add_paragraph(f"Low-coverage vehicle detail field group: {fields}.")
+
+
+def _add_source_audit_summary(doc: Document, run_summary: dict | None) -> None:
+    if not run_summary:
+        return
+    completed = str(run_summary.get("source_audit_completed", "")).lower() == "true"
+    if not completed and not run_summary.get("detail_strategy_status"):
+        return
+    _section(doc, "Source Audit and Detail Strategy Matrix")
+    doc.add_paragraph(
+        "The source audit checks returned HTML, Next.js payloads, listing-card JSON, visible card text, "
+        "network responses, and detail navigation attempts before accepting detail fields as source-limited."
+    )
+    doc.add_paragraph(f"source_audit_completed: {completed}")
+    if run_summary.get("source_audit_dir"):
+        doc.add_paragraph(f"source_audit_dir: {run_summary['source_audit_dir']}")
+    if run_summary.get("detail_strategies_tested"):
+        doc.add_paragraph(f"detail_strategies_tested: {run_summary['detail_strategies_tested']}")
+    if run_summary.get("detail_strategy_matrix_path"):
+        doc.add_paragraph(f"detail_strategy_matrix_path: {run_summary['detail_strategy_matrix_path']}")
+    if run_summary.get("detail_strategy_recommendation"):
+        doc.add_paragraph(f"detail_strategy_recommendation: {run_summary['detail_strategy_recommendation']}")
+    doc.add_paragraph(
+        "Remaining low-coverage detail-dependent fields are CO2-Emissionen, Baureihe, Ausstattungslinie, "
+        "and Anzahl der Fahrzeughalter unless a tested detail strategy extracts real values from returned source."
+    )

@@ -15,6 +15,13 @@ REQUIRED_LISTING_FIELDS = [
     "Erstzulassung",
 ]
 
+DETAIL_ENRICHMENT_FIELDS = [
+    "CO₂-Emissionen",
+    "Baureihe",
+    "Ausstattungslinie",
+    "Anzahl der Fahrzeughalter",
+]
+
 FINANCING_FIELDS = [
     "Finanzierung",
     "Financing",
@@ -41,6 +48,8 @@ def should_fetch_vehicle_detail(
     """Decide whether to request the detail page after listing-card parsing."""
     if temporarily_disabled or config.skip_vehicle_details:
         return False
+    if getattr(config, "detail_open_strategy", "") == "listing-only":
+        return False
     if not is_real_vehicle_detail_url(vehicle_url):
         return False
     if config.detail_policy == "never":
@@ -52,8 +61,19 @@ def should_fetch_vehicle_detail(
     if config.detail_policy == "financing-only":
         return not _has_any_value(fallback, FINANCING_FIELDS)
     if config.detail_policy == "missing-required":
+        if getattr(config, "detail_open_strategy", "") == "uc-popup":
+            return bool(missing_detail_enrichment_fields(fallback))
         return not _has_all_values(fallback, REQUIRED_LISTING_FIELDS)
     return True
+
+
+def missing_detail_enrichment_fields(record: dict[str, Any] | None) -> list[str]:
+    record = record or {}
+    return [
+        field
+        for field in DETAIL_ENRICHMENT_FIELDS
+        if not _has_value(record.get(field, ""))
+    ]
 
 
 def is_real_vehicle_detail_url(url: str) -> bool:
