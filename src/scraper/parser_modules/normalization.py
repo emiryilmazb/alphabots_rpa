@@ -1,3 +1,4 @@
+SEARCH_BASE = 'https://suchen.mobile.de'
 import re
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse, urlunparse

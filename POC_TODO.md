@@ -262,3 +262,13 @@
 * known vendor/contact gaps if discovered
 * next safe target: vehicle listing parser extraction
 * vehicle detail technical parser remains postponed
+
+
+## Phase D.4 Vehicle Listing Parser Extraction Notes
+* vehicle listing parser functions extracted to `parser_modules/vehicle_listing.py`
+* `parsers.py` remains backward-compatible
+* no vehicle listing behavior changed
+* existing listing/category tests pass
+* known listing parser gaps if discovered
+* next safe target: category parser separation if still mixed, or small detail-label helper extraction
+* vehicle detail technical parser remains postponed
