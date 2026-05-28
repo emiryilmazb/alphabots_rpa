@@ -251,3 +251,14 @@
 - current public entry points preserved
 - no parser behavior changed
 - next step: extract financing parser or vehicle detail parser only after fixture coverage is expanded
+
+
+## Phase D.3 Vendor Parser Extraction Notes
+* vendor parser functions extracted to `parser_modules/vendor.py`
+* shared JSON helpers extracted to `parser_modules/common.py` if applicable
+* `parsers.py` remains backward-compatible
+* no vendor behavior changed
+* existing vendor parser tests pass
+* known vendor/contact gaps if discovered
+* next safe target: vehicle listing parser extraction
+* vehicle detail technical parser remains postponed
