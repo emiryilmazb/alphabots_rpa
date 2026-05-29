@@ -272,3 +272,28 @@
 * known listing parser gaps if discovered
 * next safe target: category parser separation if still mixed, or small detail-label helper extraction
 * vehicle detail technical parser remains postponed
+
+
+## Rejected POC: 0.2s UC Popup Interaction Wait
+- Date/context: tested after parser modularization on `poc/performance-and-professionalization-v2`
+- Change tested: `time.sleep(1)` -> `time.sleep(0.2)` in `src/scraper/fetchers/uc_popup_fetcher.py`
+- Single-container result:
+  - 5-vendor capped benchmark
+  - run_id: `20260528T191807Z-4b9c4659`
+  - 20 vehicles
+  - 107.01 seconds
+  - 5.35 sec/vehicle
+  - 20 detail successes
+  - 0 detail failures
+- 4-shard result:
+  - failed / stalled
+  - Docker/Xvfb parallel environment showed `Failed to load vehicle page` warnings
+  - no merged output produced
+  - patch reverted
+- Decision:
+  - Reject 0.2s wait for production/4-shard mode
+  - Keep stable 1.0s interaction wait
+  - Single-container speedup is not enough if 4-shard stability fails
+- Future idea:
+  - If optimizing again, use adaptive wait/readiness checks instead of fixed 0.2s sleep
+  - Validate any timing optimization under 4-shard mode before accepting it
