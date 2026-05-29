@@ -342,3 +342,11 @@
 * Updated run_4shard.py and test_run_4shard.py to support forwarding --uc-wait-profile and --uc-block-resources.
 
 * 25-vendor 4-shard adaptive validation failed (0 vendors exported, containers exited early). Adaptive wait remains strictly experimental and is not accepted for production/sharded use.
+
+
+## Docker Adaptive Validation Status
+* Docker image source is currently stale in this remote environment.
+* Direct Windows absolute bind mount attempt failed.
+* Permanent docker-compose bind mount was reverted.
+* Adaptive Docker validation is paused until local tests are clean.
+* Future step: test bind mount syntax carefully or rebuild image in a persistent local terminal.

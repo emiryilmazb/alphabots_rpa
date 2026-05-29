@@ -68,8 +68,10 @@ def _collect_adaptive_wait_signals(driver):
         current_url = str(driver.current_url or "")
         title = str(driver.title or "")
         try:
-            from selenium.webdriver.common.by import By
-            body_text = str(driver.find_element(By.TAG_NAME, "body").text or "")
+            body_text = str(driver.execute_script("return document.body.innerText;") or "")
+            if not body_text:
+                from selenium.webdriver.common.by import By
+                body_text = str(driver.find_element(By.TAG_NAME, "body").text or "")
         except Exception:
             body_text = ""
         return AdaptiveWaitSignals(
