@@ -340,3 +340,5 @@
 * Next step: integrate evaluator behind a feature flag or wait profile, then validate with single-container and 4-shard capped runs.
 
 * Updated run_4shard.py and test_run_4shard.py to support forwarding --uc-wait-profile and --uc-block-resources.
+
+* 25-vendor 4-shard adaptive validation failed (0 vendors exported, containers exited early). Adaptive wait remains strictly experimental and is not accepted for production/sharded use.
