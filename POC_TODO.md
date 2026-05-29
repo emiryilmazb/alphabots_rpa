@@ -297,3 +297,12 @@
 - Future idea:
   - If optimizing again, use adaptive wait/readiness checks instead of fixed 0.2s sleep
   - Validate any timing optimization under 4-shard mode before accepting it
+
+
+## Phase E Category Traversal Notes
+* category parsing vs category traversal distinction: Parsing HTML chips/labels safely isolated in `parser_modules/vehicle_listing.py`; Traversal decision engine remains inside `vehicle_scraper.py` (`_category_sequence_from_current_page`, `collect_vehicle_entries`).
+* tests added or verified: `tests/test_category_traversal.py` already thoroughly verifies discovered/all/off modes, `max-cars-per-vendor` behavior, skipped logging, and fallback behaviors. Label regressions (e.g. SemiTrailerTruck) verified via existing parser tests.
+* whether pure traversal helper was extracted: No. Decided against extraction to avoid unnecessary risk. Traversal logic heavily depends on class state (`self.category_metadata`, `self.last_category_report`) and browser coordination.
+* no behavior changed: Confirmed.
+* known category traversal risks: Tight coupling between parsing raw HTML content and controlling `max_cars_per_vendor` loop limits inside the scraper class.
+* next safe step: adaptive wait POC design or small detail-label helper extraction
