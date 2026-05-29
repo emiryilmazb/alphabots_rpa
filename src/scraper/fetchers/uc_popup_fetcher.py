@@ -57,6 +57,30 @@ class UcPopupResult:
     artifacts: UcPopupArtifacts = field(default_factory=UcPopupArtifacts)
 
 
+from src.scraper.fetchers.adaptive_wait import AdaptiveWaitSignals, AdaptiveWaitState, evaluate_detail_readiness
+from src.domain.exceptions import DetailPageBlockedError
+
+
+def _collect_adaptive_wait_signals(driver):
+    from src.scraper.fetchers.adaptive_wait import AdaptiveWaitSignals
+    try:
+        ready_state = str(driver.execute_script("return document.readyState;") or "")
+        current_url = str(driver.current_url or "")
+        title = str(driver.title or "")
+        try:
+            from selenium.webdriver.common.by import By
+            body_text = str(driver.find_element(By.TAG_NAME, "body").text or "")
+        except Exception:
+            body_text = ""
+        return AdaptiveWaitSignals(
+            ready_state=ready_state, current_url=current_url, title=title,
+            body_text=body_text, body_length=len(body_text),
+            has_target_field=False, has_error_signal=False,
+            is_about_blank="about:blank" in current_url, is_mobile_domain="mobile.de" in current_url
+        )
+    except Exception:
+        return AdaptiveWaitSignals("complete", "https://suchen.mobile.de", "", "", 1000, False, False, False, True)
+
 class UcPopupFetcher:
     """Open a live listing URL from a vendor/category page and capture the popup tab."""
 
@@ -452,8 +476,22 @@ class UcPopupFetcher:
             )
         except Exception:
             pass
-        wait_profile = getattr(self.config, 'uc_popup_wait_profile', 'fast')
-        time.sleep(1 if wait_profile == 'safe' else 0.2)
+        wait_profile = getattr(self.config, 'uc_wait_profile', 'safe')
+        if wait_profile == 'adaptive':
+            elapsed_ms = 0
+            while elapsed_ms < 4000:
+                sigs = _collect_adaptive_wait_signals(driver)
+                decision = evaluate_detail_readiness(sigs, elapsed_ms)
+                if decision.state == AdaptiveWaitState.READY:
+                    break
+                elif decision.state == AdaptiveWaitState.ERROR:
+                    raise DetailPageBlockedError(f"Adaptive wait block: {decision.reason}")
+                import time
+                time.sleep(0.1)
+                elapsed_ms += 100
+        else:
+            import time
+            time.sleep(1)
 
     def _save_artifacts(
         self,

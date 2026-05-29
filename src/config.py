@@ -23,6 +23,8 @@ class ScraperConfig:
     """Central configuration for the mobile.de scraper pipeline."""
 
     # ── Target ────────────────────────────────────────────────────────────
+    uc_wait_profile: str = 'safe'
+    uc_block_resources: str = 'false'
     state: str = "nordrhein-westfalen"
     base_url: str = "https://home.mobile.de"
     regional_url: str = "https://home.mobile.de/regional"
