@@ -345,6 +345,8 @@ def parse_args() -> ScraperConfig:
                         help="Min delay between requests (seconds)")
     parser.add_argument("--max-delay", type=float, default=float(os.getenv("MAX_DELAY", "5.0")),
                         help="Max delay between requests (seconds)")
+    parser.add_argument("--uc-wait-profile", default=os.getenv("UC_WAIT_PROFILE", "safe"), choices=["safe", "adaptive"], help="Wait profile for undetected-chromedriver")
+    parser.add_argument("--uc-block-resources", default=os.getenv("UC_BLOCK_RESOURCES", "false"), choices=["true", "false"], help="Block images/fonts in undetected-chromedriver")
 
     args = parser.parse_args()
     headless = args.headless.lower() == "true" if args.headless is not None else False
@@ -358,6 +360,8 @@ def parse_args() -> ScraperConfig:
 
     return ScraperConfig(
         state=args.state,
+        uc_wait_profile=args.uc_wait_profile,
+        uc_block_resources=args.uc_block_resources.lower(),
         start_url=args.start_url,
         max_vendors=args.max_vendors,
         max_cars_per_vendor=max_cars_per_vendor,
