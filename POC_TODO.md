@@ -315,3 +315,11 @@
 * no behavior changed: Confirmed.
 * known category traversal risks: Tight coupling between parsing raw HTML content and controlling loop limits inside the scraper class.
 * next safe step: adaptive wait POC design or small detail-label helper extraction.
+
+
+## Phase F Adaptive Wait POC Design Notes
+* fixed 0.2s wait was rejected because it caused instability in 4-shard Docker/Xvfb validation.
+* adaptive readiness-check approach is preferred over fixed `time.sleep()`.
+* no runtime code changed yet; design phase only.
+* implementation should happen only after test helpers are designed.
+* 4-shard validation is mandatory before accepting.
