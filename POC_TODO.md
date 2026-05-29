@@ -331,3 +331,10 @@
 * no runtime code changed yet
 * implementation should happen only after test helpers are designed
 * 4-shard validation is mandatory before accepting
+
+
+## Phase F.1 Adaptive Wait Readiness Helper Notes
+* Created pure readiness evaluator.
+* Added unit tests for READY / WAIT / ERROR decisions.
+* Runtime `uc_popup_fetcher.py` behavior not changed yet.
+* Next step: integrate evaluator behind a feature flag or wait profile, then validate with single-container and 4-shard capped runs.
