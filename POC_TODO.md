@@ -323,3 +323,11 @@
 * no runtime code changed yet; design phase only.
 * implementation should happen only after test helpers are designed.
 * 4-shard validation is mandatory before accepting.
+
+
+## Phase F Adaptive Wait POC Design Notes
+* fixed 0.2s wait was rejected
+* adaptive readiness-check approach is preferred
+* no runtime code changed yet
+* implementation should happen only after test helpers are designed
+* 4-shard validation is mandatory before accepting
