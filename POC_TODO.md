@@ -306,3 +306,12 @@
 * no behavior changed: Confirmed.
 * known category traversal risks: Tight coupling between parsing raw HTML content and controlling `max_cars_per_vendor` loop limits inside the scraper class.
 * next safe step: adaptive wait POC design or small detail-label helper extraction
+
+
+## Phase E Category Traversal Notes
+* category parsing vs category traversal distinction: parsing is cleanly isolated in `parser_modules/vehicle_listing.py` (`parse_vehicle_category_options`). Traversal control (`discovered/all/off`) and the `max-cars-per-vendor` halts reside securely in `vehicle_scraper.py` (`_category_sequence_from_current_page`, `collect_vehicle_entries`).
+* tests added or verified: Existing `tests/test_category_traversal.py` is comprehensive. It thoroughly verifies discovered/all/off modes, `max-cars-per-vendor` fallback logging, and missing category scenarios.
+* whether pure traversal helper was extracted: No. Category flow logic is deeply coupled to scraper state (`self.category_metadata`, `self.last_category_report`) and browser navigation. Safest choice is to leave it integrated.
+* no behavior changed: Confirmed.
+* known category traversal risks: Tight coupling between parsing raw HTML content and controlling loop limits inside the scraper class.
+* next safe step: adaptive wait POC design or small detail-label helper extraction.
