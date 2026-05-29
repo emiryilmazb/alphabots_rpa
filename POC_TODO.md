@@ -338,3 +338,5 @@
 * Added unit tests for READY / WAIT / ERROR decisions.
 * Runtime `uc_popup_fetcher.py` behavior not changed yet.
 * Next step: integrate evaluator behind a feature flag or wait profile, then validate with single-container and 4-shard capped runs.
+
+* Updated run_4shard.py and test_run_4shard.py to support forwarding --uc-wait-profile and --uc-block-resources.

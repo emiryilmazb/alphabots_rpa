@@ -9,6 +9,8 @@ def main() -> None:
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--output-root", default="data_shards")
     parser.add_argument("--clean", action="store_true", default=True)
+    parser.add_argument("--uc-wait-profile", default="safe")
+    parser.add_argument("--uc-block-resources", default="false")
     parser.add_argument("--merge-output", default="data/merged/final_sharded_run")
     args = parser.parse_args()
 
@@ -33,6 +35,8 @@ def main() -> None:
                f'-v "{base}\\{shard_data}:/app/data" -v "{base}\\{shard_logs}:/app/logs" '
                f'-e VENDOR_SHARD_INDEX={i} -e VENDOR_SHARD_COUNT={args.shard_count} '
                f'-e UC_BLOCK_RESOURCES=true -e BROWSER_MODE=xvfb scraper python -m src.main '
+        f'--uc-wait-profile {args.uc_wait_profile} '
+        f'--uc-block-resources {args.uc_block_resources} '
                f'--state {args.state} --pipeline-mode sqlite --browser-mode xvfb '
                f'--fetch-strategy auto --detail-policy missing-required --detail-open-strategy uc-popup '
                f'--detail-max-retries 1 --max-vendors {args.max_vendors} --max-cars-per-vendor {args.max_cars_per_vendor} '
