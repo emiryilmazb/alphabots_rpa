@@ -24,9 +24,21 @@ def merge() -> None:
             try:
                 with open(ven_raw, encoding='utf-8') as f:
                     data = json.load(f)
+                if isinstance(data, dict):
+                    records = []
+                    for k, v in data.items():
+                        if isinstance(v, dict):
+                            if 'haendler_id' not in v and 'vendor_id' not in v and 'Händler ID' not in v:
+                                v['haendler_id'] = k
+                            records.append(v)
+                    data = records
+                elif not isinstance(data, list):
+                    print(f"Warning: Unsupported JSON shape in {ven_raw}", file=sys.stderr)
+                    data = []
+
                 if isinstance(data, list):
                     for item in data:
-                        vid = item.get('haendler_id')
+                        vid = item.get('haendler_id') or item.get('vendor_id') or item.get('Händler ID')
                         if vid and vid not in seen_vid:
                             seen_vid.add(vid)
                             merged_vendors.append(item)
@@ -40,9 +52,21 @@ def merge() -> None:
                 try:
                     with open(car_raw, encoding='utf-8') as f:
                         data = json.load(f)
+                    if isinstance(data, dict):
+                        records = []
+                        for k, v in data.items():
+                            if isinstance(v, dict):
+                                if 'url' not in v and 'link' not in v and 'vehicle_url' not in v and 'Link' not in v:
+                                    v['url'] = k
+                                records.append(v)
+                        data = records
+                    elif not isinstance(data, list):
+                        print(f"Warning: Unsupported JSON shape in {car_raw}", file=sys.stderr)
+                        data = []
+
                     if isinstance(data, list):
                         for item in data:
-                            url = item.get('url')
+                            url = item.get('url') or item.get('link') or item.get('vehicle_url') or item.get('Link')
                             if url and url not in seen_url:
                                 seen_url.add(url)
                                 merged_cars.append(item)

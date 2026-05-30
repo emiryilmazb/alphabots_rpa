@@ -77,3 +77,46 @@ def test_merge_empty_fails(tmp_path):
         with pytest.raises(SystemExit) as e:
             merge()
     assert e.value.code == 1
+
+
+def test_merge_dict_shaped_json(tmp_path):
+    import json, os, subprocess, sys
+    run_dir = tmp_path / "run1"
+    raw_dir = run_dir / "raw"
+    raw_dir.mkdir(parents=True)
+    vendors_dict = {
+        "V1": {"haendler_id": "V1", "name": "Vendor 1"},
+        "V2": {"name": "Vendor 2"}
+    }
+    with open(raw_dir / "vendors_raw.json", "w", encoding="utf-8") as f:
+        json.dump(vendors_dict, f)
+    cars_dict = {
+        "U1": {"url": "U1", "title": "Car 1"},
+        "U2": {"title": "Car 2"}
+    }
+    with open(raw_dir / "cars_raw.json", "w", encoding="utf-8") as f:
+        json.dump(cars_dict, f)
+    
+    # unsupported shape test
+    run_dir2 = tmp_path / "run2"
+    raw_dir2 = run_dir2 / "raw"
+    raw_dir2.mkdir(parents=True)
+    with open(raw_dir2 / "vendors_raw.json", "w", encoding="utf-8") as f:
+        json.dump("not a dict or list", f)
+    with open(raw_dir2 / "cars_raw.json", "w", encoding="utf-8") as f:
+        json.dump(12345, f)
+
+    out_dir = tmp_path / "out"
+    res = subprocess.run([sys.executable, "tools/merge_runs.py", "--runs", str(run_dir), str(run_dir2), "--output", str(out_dir)], capture_output=True, text=True)
+    
+    assert "Unsupported JSON shape" in res.stderr
+    assert os.path.exists(out_dir / "raw" / "vendors_raw.json")
+    with open(out_dir / "raw" / "vendors_raw.json", encoding="utf-8") as f:
+        merged_v = json.load(f)
+    assert len(merged_v) == 2
+    assert any(v.get("haendler_id") == "V1" for v in merged_v)
+
+    with open(out_dir / "raw" / "cars_raw.json", encoding="utf-8") as f:
+        merged_c = json.load(f)
+    assert len(merged_c) == 2
+    assert any(c.get("url") == "U1" for c in merged_c)

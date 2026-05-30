@@ -422,3 +422,12 @@
 - **Safe Result**: Exported 0 vendors and 0 vehicles. Regional discovery completed, but every single detail page failed to load (bot-blocked or timed out under static sleep conditions). Runaway was successfully prevented by the 40-page cap.
 - **Adaptive Result**: Successfully bypassed the bot blocks that stopped Safe. Exported 25 vendors and fully processed their detail pages within the exact same regional boundaries.
 - **Decision**: Adaptive wait remains a valid opt-in candidate because of its demonstrated organic stealth superiority over the brittle safe profile. However, default remains `no`.
+
+## Dictionary-Shaped Raw Exports Merge Fix
+* adaptive capped run produced dictionary-shaped raw exports
+* merge previously ignored dict-shaped JSON
+* merge now supports dict/list raw JSON formats and preserves keys if IDs are missing
+* existing adaptive shard data was successfully merged
+* adaptive remains opt-in only
+* adaptive default remains no
+* no new scraping benchmark was run
