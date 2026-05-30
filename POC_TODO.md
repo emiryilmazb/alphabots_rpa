@@ -439,3 +439,12 @@
 - Adaptive wait remains opt-in only.
 - Adaptive default remains no.
 - No new scraping benchmark was run.
+
+
+## Merge Validation Update
+- Vehicle merge now works.
+- Output completeness issue investigated: False negative. `Run_Summary`, `Data_Coverage`, and `Requirements_Compliance` are not missing; they are successfully generated as populated sheets inside the Excel dashboard (`mobile_de_nrw_dashboard.xlsx`). Standalone JSON/CSV files for these are not natively produced by `main.py`.
+- Existing adaptive shard data successfully produced complete output.
+- Adaptive wait remains opt-in only.
+- Adaptive default remains no.
+- No new scraping benchmark was run.
