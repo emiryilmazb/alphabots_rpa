@@ -12,6 +12,7 @@ def main() -> None:
     parser.add_argument("--uc-wait-profile", default="safe")
     parser.add_argument("--uc-block-resources", default="false")
     parser.add_argument("--merge-output", default="data/merged/final_sharded_run")
+    parser.add_argument("--max-pages", type=int, default=0)
     args = parser.parse_args()
 
     if args.shard_count >= 8 and not args.force:
@@ -39,6 +40,8 @@ def main() -> None:
                f'--fetch-strategy auto --detail-policy missing-required --detail-open-strategy uc-popup '
                f'--detail-max-retries 1 --max-vendors {args.max_vendors} --max-cars-per-vendor {args.max_cars_per_vendor} '
                f'--vendor-concurrency 1 --vehicle-detail-concurrency 1 --benchmark --clean-run true')
+        if args.max_pages > 0:
+            cmd += f' --max-pages {args.max_pages}'
         procs.append(subprocess.Popen(["powershell", "-Command", cmd]))
 
     for p in procs: p.wait()

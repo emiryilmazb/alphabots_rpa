@@ -376,3 +376,17 @@
 * run was manually stopped after regional guard objective was validated because it continued vendor/listing traversal
 * no 4-shard / no 25-vendor run performed
 * adaptive default remains no
+
+## Safe Benchmark Regional Page Cap
+* Safe 25-vendor comparison without max-pages is invalid.
+* It reached page 109+ / 3,600+ dealers and was manually stopped.
+* Consecutive empty/fallback guards did not trigger because parseable dealer cards continued appearing.
+* Future capped safe/adaptive benchmarks must include an explicit regional page cap, e.g. `--max-pages 40` or the actual supported flag.
+* Adaptive default remains no.
+
+## Safe Benchmark Regional Page Cap
+* Safe 25-vendor comparison without max-pages is invalid.
+* It reached page 109+ / 3,600+ dealers and was manually stopped.
+* Consecutive empty/fallback guards did not trigger because parseable dealer cards continued appearing.
+* Future capped safe/adaptive benchmarks must include an explicit regional page cap, e.g. `--max-pages 40` or the actual supported flag.
+* Adaptive default remains no.

@@ -57,3 +57,19 @@ def test_merge_sequencing():
                 
     merge_calls = [c for c in mock_run.call_args_list if isinstance(c[0][0], list) and "tools/merge_runs.py" in c[0][0]]
     assert len(merge_calls) == 0
+
+def test_cli_max_pages_forwarding():
+    test_args = ['run_4shard.py', '--max-pages', '40', '--shard-count', '1']
+    with patch.object(sys, 'argv', test_args):
+        with patch('subprocess.Popen') as mock_popen, patch('subprocess.run') as mock_run:
+            mock_process = MagicMock()
+            mock_popen.return_value = mock_process
+            mock_run_result = MagicMock()
+            mock_run_result.returncode = 0
+            mock_run.return_value = mock_run_result
+            
+            run_4shard.main()
+            
+            assert mock_popen.called
+            cmd_args = mock_popen.call_args[0][0]
+            assert '--max-pages 40' in cmd_args[-1]
