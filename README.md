@@ -6,7 +6,7 @@ Python RPA/web-scraping solution for the Alphabots GmbH developer task. The defa
 https://home.mobile.de/regional/nordrhein-westfalen/0.html
 ```
 
-The scraper collects dealer data, vehicle listing data, financing data where exposed by mobile.de, classifications, dashboard tables, an Excel workbook, and a Word report. Schema completeness is guaranteed; source completeness is measured. Required output columns are always created, unavailable source values are left empty, and coverage/error sheets explain what was available in the source pages.
+The scraper collects dealer data, vehicle listing data, financing data where exposed by mobile.de, classifications, dashboard tables, an Excel workbook, and a Word report. Technical/detail fields are complete only when detail pages are successfully reached. Financing fields are extracted where available from the source. Schema completeness is guaranteed; source completeness is measured. Required output columns are always created, unavailable source values are left empty, and coverage/error sheets explain what was available in the source pages.
 
 ## Project Overview
 
@@ -47,49 +47,28 @@ docker compose build scraper
 
 ## Recommended Commands
 
-Local small test:
+Stable default/safe profile example:
 
 ```powershell
-venv\Scripts\python.exe -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --browser-mode headed --fetch-strategy auto --detail-policy missing-required --detail-max-retries 1 --max-vendors 5 --max-cars-per-vendor 5 --vendor-concurrency 1 --vehicle-detail-concurrency 2 --benchmark
+venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 25 --max-cars-per-vendor 10 --max-pages 40 --shard-count 4 --clean --uc-wait-profile safe --uc-block-resources true
 ```
 
-Local source audit and detail strategy matrix:
+Full uncapped command should be documented cautiously, not recommended for casual validation:
 
 ```powershell
-venv\Scripts\python.exe -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --browser-mode headed --fetch-strategy auto --source-audit --source-audit-only --source-audit-max-vendors 2 --source-audit-max-vehicles 3
+venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 0 --max-cars-per-vendor 0 --shard-count 4 --clean --uc-wait-profile safe --uc-block-resources true
 ```
 
-Isolated UC popup detail test:
+Adaptive opt-in example:
 
 ```powershell
-venv\Scripts\python.exe tools\detail_lab_uc_popup_pipeline_test.py --max-vehicles 2 --output-dir data\runs\detail_lab_uc_popup_pipeline_test --browser-mode headed
+venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 25 --max-cars-per-vendor 10 --max-pages 40 --shard-count 4 --clean --uc-wait-profile adaptive --uc-block-resources true
 ```
 
-Local UC popup small smoke:
-
-```powershell
-venv\Scripts\python.exe -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --browser-mode headed --fetch-strategy auto --detail-policy missing-required --detail-open-strategy uc-popup --detail-max-retries 1 --max-vendors 2 --max-cars-per-vendor 3 --vendor-concurrency 1 --vehicle-detail-concurrency 1 --benchmark --clean-run true
-```
-
-Docker/Xvfb server mode with stable listing fallback:
-
-```powershell
-docker compose run --rm -e BROWSER_MODE=xvfb scraper python -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --browser-mode xvfb --fetch-strategy auto --detail-policy missing-required --detail-open-strategy listing-only --detail-max-retries 1 --max-vendors 10 --max-cars-per-vendor 5 --vendor-concurrency 1 --vehicle-detail-concurrency 1 --benchmark
-```
-
-Docker/Xvfb UC popup compatibility smoke:
-
-```powershell
-docker compose run --rm -e BROWSER_MODE=xvfb scraper python -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --browser-mode xvfb --fetch-strategy auto --detail-policy missing-required --detail-open-strategy uc-popup --detail-max-retries 1 --max-vendors 2 --max-cars-per-vendor 3 --vendor-concurrency 1 --vehicle-detail-concurrency 1 --benchmark --clean-run true
-```
-
-Final larger run, only if approved:
-
-```powershell
-docker compose run --rm -e BROWSER_MODE=xvfb scraper python -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --browser-mode xvfb --fetch-strategy auto --detail-policy missing-required --detail-max-retries 1 --vendor-concurrency 1 --vehicle-detail-concurrency 1 --benchmark
-```
-
-Do not use the final larger command as a smoke test. Run capped benchmarks first and inspect the output quality.
+Make clear:
+- adaptive is experimental/opt-in
+- adaptive is not default
+- default remains safe
 
 ## Execution Modes
 
@@ -210,7 +189,7 @@ The Word report documents:
 It includes the exact statement:
 
 ```text
-Schema completeness is guaranteed; source completeness is measured.
+Technical/detail fields are complete only when detail pages are successfully reached. Financing fields are extracted where available from the source. Schema completeness is guaranteed; source completeness is measured.
 ```
 
 ## Data_Coverage

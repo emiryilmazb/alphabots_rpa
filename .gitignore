@@ -53,3 +53,9 @@ shard_results.json
 final_sanity.json
 tmp_*.txt
 first_car_dump.txt
+
+# Generated Dashboard/Reports
+mobile_de_nrw_dashboard*.xlsx
+mobile_de_nrw_report*.docx
+benchmark_*.json
+adaptive_*.json
