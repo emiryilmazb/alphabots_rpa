@@ -408,3 +408,11 @@
 * cautious safe vs adaptive comparison: Safe completed successfully with page cap. Adaptive (5.67s/veh) was previously faster but un-capped.
 * whether adaptive should be rerun with same page cap for exact comparison: yes
 * adaptive default remains no
+
+## Adaptive Capped Validation (vs Safe)
+- Command used: `venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 25 --max-cars-per-vendor 10 --max-pages 40 --shard-count 4 --clean --uc-wait-profile adaptive --uc-block-resources true`
+- `--max-pages 40` was honored and prevented regional runaway.
+- Adaptive profile successfully exported vehicles within the same bounds where Safe exported 0.
+- Adaptive profile loaded detail pages successfully and bypassed the bot blocks that stopped Safe.
+- Browsers closed cleanly, and all Excel/Word reports generated.
+- Adaptive wait remains an opt-in candidate, default remains no.
