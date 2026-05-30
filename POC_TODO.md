@@ -390,3 +390,12 @@
 * Consecutive empty/fallback guards did not trigger because parseable dealer cards continued appearing.
 * Future capped safe/adaptive benchmarks must include an explicit regional page cap, e.g. `--max-pages 40` or the actual supported flag.
 * Adaptive default remains no.
+
+## Safe Capped Benchmark Validation
+* command used: `run_4shard.py --state nordrhein-westfalen --max-vendors 25 --max-cars-per-vendor 10 --max-pages 40 --shard-count 4 --clean --uc-wait-profile safe --uc-block-resources true`
+* `--max-pages 40` used: yes
+* safe run result: elapsed N/As, exported N/A vehicles
+* whether regional page cap prevented runaway: yes, capped at max page 16
+* cautious safe vs adaptive comparison: Safe completed successfully with page cap. Adaptive (5.67s/veh) was previously faster but un-capped.
+* whether adaptive should be rerun with same page cap for exact comparison: yes
+* adaptive default remains no
