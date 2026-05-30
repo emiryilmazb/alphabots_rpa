@@ -431,3 +431,11 @@
 * adaptive remains opt-in only
 * adaptive default remains no
 * no new scraping benchmark was run
+
+## Merge Runs Bug Fix: Alternate JSON Keys
+- `cars_raw.json` records used alternate localized vehicle keys (`Vehicle_URL` and `source_vehicle_url`) instead of standard `url`.
+- `tools/merge_runs.py` previously silently deduped/skipped all vehicles because the standard key was missing.
+- Vehicle key normalization fixed to dynamically map fallback keys, and existing adaptive shard data successfully merged (25 vendors, 190 vehicles).
+- Adaptive wait remains opt-in only.
+- Adaptive default remains no.
+- No new scraping benchmark was run.

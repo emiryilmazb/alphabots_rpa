@@ -17,6 +17,7 @@ def merge() -> None:
     merged_cars = []
     t_ven = 0
     t_veh = 0
+    skipped_veh = 0
     
     for run in args.runs:
         ven_raw = os.path.join(run, "raw", "vendors_raw.json")
@@ -66,11 +67,18 @@ def merge() -> None:
 
                     if isinstance(data, list):
                         for item in data:
-                            url = item.get('url') or item.get('link') or item.get('vehicle_url') or item.get('Link')
-                            if url and url not in seen_url:
-                                seen_url.add(url)
-                                merged_cars.append(item)
-                                t_veh += 1
+                            url = item.get('url') or item.get('link') or item.get('vehicle_url') or item.get('Link') or item.get('Vehicle_URL') or item.get('source_vehicle_url')
+                            if not url:
+                                vid = item.get('vehicle_id') or item.get('Fahrzeug_ID') or item.get('id')
+                                if vid:
+                                    url = f"id:{vid}"
+                            if url:
+                                if url not in seen_url:
+                                    seen_url.add(url)
+                                    merged_cars.append(item)
+                                    t_veh += 1
+                            else:
+                                skipped_veh += 1
                 except Exception as e:
                     print(f"Error reading {car_raw}: {e}", file=sys.stderr)
         
@@ -90,12 +98,19 @@ def merge() -> None:
             try:
                 with open(cf, encoding='utf-8') as f:
                     item = json.load(f)
-                url = item.get('url')
-                if url and url not in seen_url:
-                    seen_url.add(url)
-                    merged_cars.append(item)
-                    shutil.copy(cf, os.path.join(raw_dir, "vehicles", os.path.basename(cf)))
-                    t_veh += 1
+                url = item.get('url') or item.get('link') or item.get('vehicle_url') or item.get('Link') or item.get('Vehicle_URL') or item.get('source_vehicle_url')
+                if not url:
+                    vid = item.get('vehicle_id') or item.get('Fahrzeug_ID') or item.get('id')
+                    if vid:
+                        url = f"id:{vid}"
+                if url:
+                    if url not in seen_url:
+                        seen_url.add(url)
+                        merged_cars.append(item)
+                        shutil.copy(cf, os.path.join(raw_dir, "vehicles", os.path.basename(cf)))
+                        t_veh += 1
+                else:
+                    skipped_veh += 1
             except Exception: pass
 
     if t_ven == 0 and t_veh == 0:
@@ -111,6 +126,8 @@ def merge() -> None:
 
     out_docker = f"/app/data/merged/{os.path.basename(args.output)}/output"
     in_docker = f"/app/data/merged/{os.path.basename(args.output)}/raw"
+    if skipped_veh > 0:
+        print(f"Warning: Skipped {skipped_veh} vehicles due to missing unique URL or ID.", file=sys.stderr)
     print(f"Merged {t_ven} vendors and {t_veh} vehicles.")
     subprocess.run(["docker", "compose", "run", "--rm", "scraper", "python", "-m", "src.main", "--state", "nordrhein-westfalen", "--pipeline-mode", "sqlite", "--process-existing", "--overwrite", "--input-dir", in_docker, "--output-dir", out_docker])
 
