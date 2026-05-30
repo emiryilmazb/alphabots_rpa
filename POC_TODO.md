@@ -357,3 +357,10 @@
 - 25-vendor adaptive run succeeded earlier but metrics were missing.
 - Safe comparison run was invalid due to regional producer runaway/fallback loop.
 - Producer runaway guard should be a separate future phase.
+
+## Producer / Regional Pagination Runaway Guard
+* safe comparison run was invalid due to regional pagination loop.
+* guard added for repeated empty/no-dealer/failure pages.
+* full discovery behavior should remain intact.
+* adaptive default remains no.
+* future: rerun safe baseline only after guard is validated.
