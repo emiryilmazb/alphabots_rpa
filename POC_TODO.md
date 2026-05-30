@@ -399,3 +399,12 @@
 * cautious safe vs adaptive comparison: Safe completed successfully with page cap. Adaptive (5.67s/veh) was previously faster but un-capped.
 * whether adaptive should be rerun with same page cap for exact comparison: yes
 * adaptive default remains no
+
+## Safe Benchmark Regional Page Cap Validation
+* command used: `venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 25 --max-cars-per-vendor 10 --max-pages 40 --shard-count 4 --clean --uc-wait-profile safe --uc-block-resources true`
+* `--max-pages 40` used: yes
+* safe run result: elapsed N/As, exported N/A vehicles (eff N/As/veh)
+* whether regional page cap prevented runaway: yes, max regional page observed: 39
+* cautious safe vs adaptive comparison: Safe completed successfully with page cap. Adaptive (5.67s/veh) was previously faster but un-capped.
+* whether adaptive should be rerun with same page cap for exact comparison: yes
+* adaptive default remains no
