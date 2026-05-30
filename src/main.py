@@ -877,11 +877,22 @@ def _compute_run_summary(
         )
     )
 
+    adaptive_wait_used_count = int(getattr(config, "adaptive_wait_used_count", 0) or 0)
+    adaptive_wait_total_ms = int(getattr(config, "adaptive_wait_total_ms", 0) or 0)
+    adaptive_wait_avg_ms = adaptive_wait_total_ms / adaptive_wait_used_count if adaptive_wait_used_count > 0 else 0.0
+
     summary_dict = {
         "run_id": run_id,
         "started_at_utc": started_at.isoformat(),
         "finished_at_utc": finished_at.isoformat(),
         "duration_seconds": round(duration.total_seconds(), 2),
+        "adaptive_wait_used_count": adaptive_wait_used_count,
+        "adaptive_wait_success_count": int(getattr(config, "adaptive_wait_success_count", 0) or 0),
+        "adaptive_wait_timeout_count": int(getattr(config, "adaptive_wait_timeout_count", 0) or 0),
+        "adaptive_wait_error_count": int(getattr(config, "adaptive_wait_error_count", 0) or 0),
+        "adaptive_wait_total_ms": adaptive_wait_total_ms,
+        "adaptive_wait_avg_ms": round(adaptive_wait_avg_ms, 2),
+        "adaptive_wait_max_ms": int(getattr(config, "adaptive_wait_max_ms", 0) or 0),
         "target_state": _state_label(config.state),
         "target_state_slug": config.state,
         "search_state": _state_label(config.state),

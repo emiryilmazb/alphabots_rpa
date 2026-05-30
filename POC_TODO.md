@@ -350,3 +350,10 @@
 * Permanent docker-compose bind mount was reverted.
 * Adaptive Docker validation is paused until local tests are clean.
 * Future step: test bind mount syntax carefully or rebuild image in a persistent local terminal.
+
+## Adaptive Wait Metrics
+- Adaptive wait remains opt-in only.
+- Metrics are now exposed to Run_Summary.
+- 25-vendor adaptive run succeeded earlier but metrics were missing.
+- Safe comparison run was invalid due to regional producer runaway/fallback loop.
+- Producer runaway guard should be a separate future phase.

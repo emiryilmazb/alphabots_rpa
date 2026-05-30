@@ -481,16 +481,29 @@ class UcPopupFetcher:
         wait_profile = getattr(self.config, 'uc_wait_profile', 'safe')
         if wait_profile == 'adaptive':
             elapsed_ms = 0
+            self._increment("adaptive_wait_used_count")
             while elapsed_ms < 4000:
                 sigs = _collect_adaptive_wait_signals(driver)
                 decision = evaluate_detail_readiness(sigs, elapsed_ms)
                 if decision.state == AdaptiveWaitState.READY:
+                    self._increment("adaptive_wait_success_count")
                     break
                 elif decision.state == AdaptiveWaitState.ERROR:
+                    self._increment("adaptive_wait_error_count")
+                    self._increment("adaptive_wait_total_ms", elapsed_ms)
+                    max_ms = int(getattr(self.config, "adaptive_wait_max_ms", 0) or 0)
+                    if elapsed_ms > max_ms:
+                        setattr(self.config, "adaptive_wait_max_ms", elapsed_ms)
                     raise DetailPageBlockedError(f"Adaptive wait block: {decision.reason}")
                 import time
                 time.sleep(0.1)
                 elapsed_ms += 100
+            else:
+                self._increment("adaptive_wait_timeout_count")
+            self._increment("adaptive_wait_total_ms", elapsed_ms)
+            max_ms = int(getattr(self.config, "adaptive_wait_max_ms", 0) or 0)
+            if elapsed_ms > max_ms:
+                setattr(self.config, "adaptive_wait_max_ms", elapsed_ms)
         else:
             import time
             time.sleep(1)
