@@ -364,3 +364,15 @@
 * full discovery behavior should remain intact.
 * adaptive default remains no.
 * future: rerun safe baseline only after guard is validated.
+
+## Regional Guard Tiny Validation
+* command used: `docker compose run --rm -e BROWSER_MODE=xvfb scraper python -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --browser-mode xvfb --fetch-strategy auto --max-pages 5 --max-vendors 0 --skip-vehicle-details true --benchmark --clean-run true --discover-only`
+* run_id: `20260530T032555Z-d83861a9`
+* max_pages=5 was honored
+* pages visited: 5
+* vendors discovered: 162 unique dealers
+* no page 190/200 runaway observed
+* consecutive empty/fallback guards did not need to trigger in this run
+* run was manually stopped after regional guard objective was validated because it continued vendor/listing traversal
+* no 4-shard / no 25-vendor run performed
+* adaptive default remains no
