@@ -43,6 +43,10 @@ class RegionalScraper:
         page_num = 0
         self.last_discovered_count = 0
         self.last_enqueued_count = 0
+        consecutive_empty_pages = 0
+        consecutive_fallback_failures = 0
+        MAX_CONSECUTIVE_EMPTY = 3
+        MAX_CONSECUTIVE_FALLBACKS = 3
 
         while True:
             # Check page limit
@@ -63,6 +67,10 @@ class RegionalScraper:
                 break
 
             if result.strategy.startswith("playwright"):
+                consecutive_fallback_failures += 1
+                if consecutive_fallback_failures >= MAX_CONSECUTIVE_FALLBACKS:
+                    logger.warning("Reached %d consecutive Playwright fallbacks. Stopping runaway pagination.", consecutive_fallback_failures)
+                    break
                 # Wait briefly for either rendered dealer links or the empty page state.
                 try:
                     await self.browser.page.wait_for_load_state("networkidle", timeout=10000)
@@ -70,13 +78,10 @@ class RegionalScraper:
                     logger.debug("Network idle wait timed out on regional page %d.", page_num)
                 html = await self.browser.get_page_html()
             else:
+                consecutive_fallback_failures = 0
                 html = result.html
 
             dealers = parse_regional_page(html)
-
-            if not dealers:
-                logger.info("No dealers found on page %d. End of pagination.", page_num)
-                break
 
             # Deduplicate
             new_count = 0
@@ -100,9 +105,13 @@ class RegionalScraper:
                         page_num, len(dealers), new_count, len(all_dealers))
 
             if new_count == 0:
-                logger.info("No new dealers on page %d. Stopping.", page_num)
-                break
-
+                consecutive_empty_pages += 1
+                logger.info("Page %d yielded no new dealers. (Consecutive: %d)", page_num, consecutive_empty_pages)
+                if consecutive_empty_pages >= MAX_CONSECUTIVE_EMPTY:
+                    logger.info("Reached %d consecutive empty/no-new-dealer pages. Stopping.", consecutive_empty_pages)
+                    break
+            else:
+                consecutive_empty_pages = 0
 
             page_num += 1
             await self.browser.polite_delay()

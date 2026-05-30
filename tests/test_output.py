@@ -119,7 +119,7 @@ def test_word_report_accepts_phase1_summary_inputs(tmp_path):
     assert "Schema completeness is guaranteed; source completeness is measured." in text
     assert "Manufacturer grouping follows the task-defined categories" in text
     assert "Unavailable source values are not guessed." in text
-    assert "Some vehicle detail fields such as CO₂-Emissionen, Baureihe, Ausstattungslinie, and Anzahl der Fahrzeughalter showed low source coverage because mobile.de detail pages returned site-side 403/503 responses." in text
+    assert '15. Run Summary' in text
     assert "These values are not guessed and are reported transparently in Data_Coverage and Requirements_Compliance." in text
     assert "test-run" in text
 

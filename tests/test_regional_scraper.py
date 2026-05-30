@@ -70,3 +70,104 @@ def test_regional_parses_32_but_emits_only_max_vendors():
     assert discovered_count == 32
     assert len(dealers) == 5
     assert len(emitted) == 32
+
+
+def test_consecutive_empty_pages_stops_pagination():
+    async def run():
+        scraper = RegionalScraper(
+            browser=type("FakeBrowser", (), {"polite_delay": lambda self: __import__("asyncio").sleep(0)})(),
+            config=ScraperConfig(max_pages_per_state=10),
+        )
+        
+        call_count = 0
+        async def mock_fetch(self, url, validator=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                html = f'<html><body><a href="https://home.mobile.de/DEALER{call_count}"><strong>D</strong><span>S</span></a></body></html>'
+            else:
+                html = '<html><body></body></html>'
+            return FetchResult(url=url, html=html, status_code=200, strategy="curl_cffi")
+            
+        scraper.fetch_manager = type("FakeFM", (), {"fetch": mock_fetch})()
+        dealers = await scraper.collect_dealer_entries()
+        return call_count, dealers
+
+    call_count, dealers = asyncio.run(run())
+    assert call_count == 5
+    assert len(dealers) == 2
+
+
+def test_consecutive_empty_pages_resets_on_success():
+    async def run():
+        scraper = RegionalScraper(
+            browser=type("FakeBrowser", (), {"polite_delay": lambda self: __import__("asyncio").sleep(0)})(),
+            config=ScraperConfig(max_pages_per_state=10),
+        )
+        
+        call_count = 0
+        async def mock_fetch(self, url, validator=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1 or call_count == 4:
+                html = f'<html><body><a href="https://home.mobile.de/DEALER{call_count}"><strong>D</strong><span>S</span></a></body></html>'
+            else:
+                html = '<html><body></body></html>'
+            return FetchResult(url=url, html=html, status_code=200, strategy="curl_cffi")
+            
+        scraper.fetch_manager = type("FakeFM", (), {"fetch": mock_fetch})()
+        dealers = await scraper.collect_dealer_entries()
+        return call_count, dealers
+
+    call_count, dealers = asyncio.run(run())
+    assert call_count == 7
+    assert len(dealers) == 2
+
+
+def test_max_pages_honored():
+    async def run():
+        scraper = RegionalScraper(
+            browser=type("FakeBrowser", (), {"polite_delay": lambda self: __import__("asyncio").sleep(0)})(),
+            config=ScraperConfig(max_pages_per_state=2),
+        )
+        call_count = 0
+        async def mock_fetch(self, url, validator=None):
+            nonlocal call_count
+            call_count += 1
+            html = f'<html><body><a href="https://home.mobile.de/D{call_count}"><strong>D</strong><span>S</span></a></body></html>'
+            return FetchResult(url=url, html=html, status_code=200, strategy="curl_cffi")
+        scraper.fetch_manager = type("FakeFM", (), {"fetch": mock_fetch})()
+        dealers = await scraper.collect_dealer_entries()
+        return call_count, dealers
+
+    call_count, dealers = asyncio.run(run())
+    assert call_count == 2
+    assert len(dealers) == 2
+
+
+def test_consecutive_fallback_failures_stops_pagination():
+    async def run():
+        scraper = RegionalScraper(
+            browser=type("FakeBrowser", (), {"polite_delay": lambda self: __import__("asyncio").sleep(0)})(),
+            config=ScraperConfig(max_pages_per_state=10),
+        )
+        
+        call_count = 0
+        async def mock_fetch(self, url, validator=None):
+            nonlocal call_count
+            call_count += 1
+            html = f'<html><body><a href="https://home.mobile.de/D{call_count}"><strong>D</strong><span>S</span></a></body></html>'
+            return FetchResult(url=url, html=html, status_code=200, strategy="playwright")
+            
+        scraper.fetch_manager = type("FakeFM", (), {"fetch": mock_fetch})()
+        scraper.browser.page = type("FakePage", (), {"wait_for_load_state": lambda *args, **kwargs: __import__("asyncio").sleep(0)})()
+        async def mock_get_html():
+            return f'<html><body><a href="https://home.mobile.de/D{call_count}"><strong>D</strong><span>S</span></a></body></html>'
+        scraper.browser.get_page_html = mock_get_html
+        
+        dealers = await scraper.collect_dealer_entries()
+        return call_count, dealers
+
+    call_count, dealers = asyncio.run(run())
+    assert call_count == 3
+    assert len(dealers) == 2
