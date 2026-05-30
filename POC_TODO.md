@@ -416,3 +416,9 @@
 - Adaptive profile loaded detail pages successfully and bypassed the bot blocks that stopped Safe.
 - Browsers closed cleanly, and all Excel/Word reports generated.
 - Adaptive wait remains an opt-in candidate, default remains no.
+
+## Exact Safe vs Adaptive Comparison (Capped at 40 pages)
+- Both profiles ran under identical boundaries: `max-vendors=25`, `max-cars-per-vendor=10`, `max-pages=40`, `shard-count=4`.
+- **Safe Result**: Exported 0 vendors and 0 vehicles. Regional discovery completed, but every single detail page failed to load (bot-blocked or timed out under static sleep conditions). Runaway was successfully prevented by the 40-page cap.
+- **Adaptive Result**: Successfully bypassed the bot blocks that stopped Safe. Exported 25 vendors and fully processed their detail pages within the exact same regional boundaries.
+- **Decision**: Adaptive wait remains a valid opt-in candidate because of its demonstrated organic stealth superiority over the brittle safe profile. However, default remains `no`.
