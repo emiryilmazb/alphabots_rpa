@@ -59,11 +59,13 @@ def parse_vehicle_listing_summaries(html: str) -> dict[str, dict[str, str]]:
                 "Markes": brand,
                 "Models": model,
                 "Preis": _choose_price(strings),
-                "Kilometerstand": _first_match(attrs, r"\b\d[\d. ]*\s*km\b"),
+                "Kilometerstand": _first_match(attrs, r"\b[\d.]+\s*km\b"),
                 "Erstzulassung": _first_match(attrs, r"\b(?:EZ\s*)?\d{2}/\d{4}\b").replace("EZ ", ""),
                 "Leistung": _first_match(attrs, r"\b\d{1,4}\s*kW\s*\(\s*\d{1,4}\s*PS\s*\)|\b\d{1,4}\s*kW\b"),
                 "Kraftstoffart": _first_match(attrs, r"\b(?:Benzin|Diesel|Elektro|Hybrid|Erdgas|Autogas|Wasserstoff)\b"),
                 "Getriebe": _first_match(attrs, r"\b(?:Automatik|Schaltgetriebe|Halbautomatik)\b"),
+                "Fahrzeugzustand": _first_match(attrs, r"\b(?:Gebrauchtfahrzeug|Neufahrzeug|Jahreswagen|Vorführfahrzeug|Tageszulassung)\b"),
+                "Schadstoffklasse": _first_match(attrs, r"\bEuro\s*\d[a-zA-Z]?\b"),
                 **attr_fields,
             }
             _merge_listing_summary(summaries, url, {k: v for k, v in summary.items() if v})
