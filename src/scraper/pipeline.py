@@ -161,7 +161,7 @@ class RegionalDiscoveryProducer:
             await browser.close()
             try:
                 if 'vehicle_scraper' in locals() and hasattr(vehicle_scraper, 'uc_popup_fetcher'):
-                    vehicle_scraper.uc_popup_fetcher.close()
+                    await vehicle_scraper.close()
             except Exception:
                 pass
 
@@ -219,7 +219,7 @@ class VendorWorker:
             await browser.close()
             try:
                 if 'vehicle_scraper' in locals() and hasattr(vehicle_scraper, 'uc_popup_fetcher'):
-                    vehicle_scraper.uc_popup_fetcher.close()
+                    await vehicle_scraper.close()
             except Exception:
                 pass
 
@@ -386,7 +386,7 @@ class VehicleDetailWorker:
             await browser.close()
             try:
                 if 'vehicle_scraper' in locals() and hasattr(vehicle_scraper, 'uc_popup_fetcher'):
-                    vehicle_scraper.uc_popup_fetcher.close()
+                    await vehicle_scraper.close()
             except Exception:
                 pass
 

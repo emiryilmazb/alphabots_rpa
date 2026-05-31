@@ -84,6 +84,10 @@ class ScraperConfig:
     active_playwright_browser_count: int = 0
     max_active_playwright_browser_count: int = 0
     idle_about_blank_count: int = 0
+    host_chrome_cdp_used_count: int = 0
+    host_chrome_cdp_success_count: int = 0
+    host_chrome_cdp_failed_count: int = 0
+    host_chrome_cdp_blocked_count: int = 0
 
     # ── Pipeline ──────────────────────────────────────────────────────────
     pipeline_mode: str = "sqlite"
@@ -93,6 +97,7 @@ class ScraperConfig:
     vehicle_detail_concurrency: int = 1
     detail_policy: str = "missing-required"
     detail_open_strategy: str = "auto"
+    chrome_cdp_url: str = "http://127.0.0.1:9222"
     idle_browser_timeout_seconds: float = 15.0
     flush_every: int = 100
 
@@ -144,6 +149,8 @@ class ScraperConfig:
         self.detail_policy = self.detail_policy.lower()
         if self.detail_policy not in VALID_DETAIL_POLICIES:
             raise ValueError(f"Unsupported detail policy: {self.detail_policy}")
+        self.detail_open_strategy = self.detail_open_strategy.lower()
+        self.chrome_cdp_url = str(self.chrome_cdp_url or "http://127.0.0.1:9222")
         self.flush_every = max(1, int(self.flush_every))
         if self.clean_run:
             self.resume = False
@@ -309,7 +316,9 @@ def parse_args() -> ScraperConfig:
     parser.add_argument("--vehicle-detail-concurrency", type=int,
                         default=int(os.getenv("VEHICLE_DETAIL_CONCURRENCY", "1")),
                         help="Concurrent vehicle detail workers for sqlite pipeline")
-    parser.add_argument("--detail-open-strategy", type=str, default="auto")
+    parser.add_argument("--detail-open-strategy", type=str, default=os.getenv("DETAIL_OPEN_STRATEGY", "auto"))
+    parser.add_argument("--chrome-cdp-url", type=str, default=os.getenv("CHROME_CDP_URL", "http://127.0.0.1:9222"),
+                        help="Existing host Chrome remote debugging endpoint for --detail-open-strategy host-chrome-cdp")
     parser.add_argument("--detail-policy", default=os.getenv("DETAIL_POLICY", "missing-required"),
                         choices=sorted(VALID_DETAIL_POLICIES),
                         help="When vehicle detail pages are fetched after listing/card parsing")
@@ -396,6 +405,7 @@ def parse_args() -> ScraperConfig:
         vehicle_detail_concurrency=args.vehicle_detail_concurrency,
         detail_policy=args.detail_policy,
         detail_open_strategy=getattr(args, "detail_open_strategy", "auto"),
+        chrome_cdp_url=args.chrome_cdp_url,
         idle_browser_timeout_seconds=max(0.0, args.idle_browser_timeout_seconds),
         resume=args.resume.lower() == "true",
         clean_run=args.clean_run.lower() == "true",

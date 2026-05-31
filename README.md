@@ -93,6 +93,18 @@ The strategy opens the current vendor/category page, collects live mobile.de det
 
 Run UC popup with `--vehicle-detail-concurrency 1`. The output metrics include `detail_open_strategy`, `popup_opened_count`, `popup_captured_count`, `popup_capture_failed_count`, `wrong_tab_capture_count`, `real_detail_page_loaded_count`, `detail_home_redirect_count`, `detail_error_page_count`, `stale_redirect_count`, `uc_popup_success_count`, `uc_popup_failed_count`, and `detail_target_fields_extracted_count`.
 
+## Host Chrome CDP Detail Strategy
+
+`--detail-open-strategy host-chrome-cdp` is an emergency, opt-in detail strategy for local runs where the user's normal Chrome session can load mobile.de detail pages but automated browser launches are blocked. It connects to an already-running Chrome remote debugging endpoint and reads rendered detail HTML from that host browser session. It is never used by default.
+
+Start a separate Chrome profile first:
+
+```powershell
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\mobilede_detail_profile"
+```
+
+Then run with `--detail-open-strategy host-chrome-cdp --chrome-cdp-url http://127.0.0.1:9222` and `--vehicle-detail-concurrency 1`. If the CDP endpoint is unavailable, or if the page classifies as a block/CAPTCHA/login challenge, the run records the failure and keeps listing fallback data. The strategy does not solve CAPTCHA and closes only tabs it creates.
+
 ## CLI Options
 
 | Option | Default | Purpose |
@@ -104,7 +116,8 @@ Run UC popup with `--vehicle-detail-concurrency 1`. The output metrics include `
 | `--browser-mode` | `headed` | `headless`, `headed`, or `xvfb` |
 | `--fetch-strategy` | `auto` | `auto`, `curl`, or `playwright` |
 | `--detail-policy` | `missing-required` | `always`, `missing-required`, `financing-only`, or `never` |
-| `--detail-open-strategy` | `auto` | `auto`, `listing-only`, `playwright-direct`, `playwright-click`, or `uc-popup`; legacy aliases are accepted |
+| `--detail-open-strategy` | `auto` | `auto`, `listing-only`, `playwright-direct`, `playwright-click`, `uc-popup`, or `host-chrome-cdp`; legacy aliases are accepted |
+| `--chrome-cdp-url` | `http://127.0.0.1:9222` | Existing host Chrome CDP endpoint for `host-chrome-cdp` |
 | `--source-audit` | `false` | Save tiny-sample raw source artifacts, network logs, and detail strategy matrix evidence |
 | `--source-audit-only` | `false` | Run only source audit/matrix and skip normal exports |
 | `--source-audit-max-vendors` | `2` | Max vendors inspected by source audit |
@@ -254,7 +267,7 @@ Some vehicle detail fields such as CO₂-Emissionen, Baureihe, Ausstattungslinie
 
 Targeted source audit found that some listing payloads expose previous-owner count as `attr.pvo`; the parser maps this real source value to `Anzahl der Fahrzeughalter`. The optional UC popup strategy can increase measured coverage for CO₂-Emissionen, Baureihe, and Ausstattungslinie when mobile.de returns a real detail page for a live listing.
 
-UC popup is slower than listing extraction and should be run with detail concurrency 1. If the dependency stack is unavailable, the run records `uc_dependency_missing` with the message `uc-popup strategy requires undetected_chromedriver and local Chrome.` and preserves listing fallback output.
+UC popup and host Chrome CDP are slower than listing extraction and should be run with detail concurrency 1. If the UC dependency stack is unavailable, the run records `uc_dependency_missing` with the message `uc-popup strategy requires undetected_chromedriver and local Chrome.` and preserves listing fallback output. If host Chrome CDP is unavailable, the run records `host_chrome_cdp_failed` / `host_chrome_cdp_*` metrics and preserves listing fallback output.
 
 Financing fields are populated only when mobile.de exposes a financing offer in the listing payload or detail source. Dealer homepage, second phone, mobile phone, and fax fields can be sparse because not every dealer publishes those values.
 
