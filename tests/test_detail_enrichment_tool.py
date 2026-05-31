@@ -148,3 +148,88 @@ def test_enricher_records_host_chrome_block_and_disables(tmp_path):
     assert summary["host_chrome_disabled"] is True
     assert summary["new_failed_detail_ids_count"] == 1
     assert (tmp_path / "cache" / "failed_detail_ids.json").exists()
+
+
+def test_enricher_forces_cache_before_live_methods(tmp_path):
+    cache_dir = tmp_path / "cache"
+    parsed_dir = cache_dir / "parsed"
+    parsed_dir.mkdir(parents=True)
+    (parsed_dir / "123.json").write_text(
+        json.dumps({"parsed_fields": {"Baureihe": "F30"}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    records = [
+        {
+            "Vehicle_URL": "https://suchen.mobile.de/fahrzeuge/details.html?id=123",
+            "Baureihe": "",
+        }
+    ]
+    enricher = DetailEnricher(
+        cache_dir=cache_dir,
+        methods=["host-chrome-cdp"],
+        chrome_cdp_url="http://127.0.0.1:9222",
+        sleep_seconds=0,
+        stop_after_blocks=1,
+        host_fetcher_factory=FakeBlockedHostFetcher,
+    )
+
+    summary = asyncio.run(enricher.enrich_records(records, max_vehicles=1))
+
+    assert records[0]["Baureihe"] == "F30"
+    assert summary["cache_hit"] == 1
+    assert "host_chrome_cdp_attempt_count" not in summary
+
+
+def test_retry_only_missing_skips_records_with_detail_targets(tmp_path):
+    records = [
+        {
+            "Vehicle_URL": "https://suchen.mobile.de/fahrzeuge/details.html?id=123",
+            "CO₂-Emissionen": "110 g/km",
+            "Baureihe": "F30",
+            "Ausstattungslinie": "Sport Line",
+            "Anzahl der Fahrzeughalter": "1",
+            "Hubraum": "1.995 cm³",
+            "Anzahl der Türen": "4/5",
+            "Schadstoffklasse": "Euro 6",
+            "Farbe": "Schwarz",
+            "Anzahl Sitzplätze": "5",
+            "Finanzierung": "",
+        }
+    ]
+    enricher = DetailEnricher(
+        cache_dir=tmp_path / "cache",
+        methods=["host-chrome-cdp"],
+        chrome_cdp_url="http://127.0.0.1:9222",
+        sleep_seconds=0,
+        stop_after_blocks=1,
+        retry_only_missing=True,
+        host_fetcher_factory=FakeBlockedHostFetcher,
+    )
+
+    summary = asyncio.run(enricher.enrich_records(records, max_vehicles=1))
+
+    assert summary["processed_vehicle_count"] == 0
+    assert summary["skipped_not_missing_retry_fields_count"] == 1
+    assert "host_chrome_cdp_attempt_count" not in summary
+
+
+def test_max_block_rate_disables_host_chrome(tmp_path):
+    records = [
+        {"Vehicle_URL": "https://suchen.mobile.de/fahrzeuge/details.html?id=123"},
+        {"Vehicle_URL": "https://suchen.mobile.de/fahrzeuge/details.html?id=456"},
+    ]
+    enricher = DetailEnricher(
+        cache_dir=tmp_path / "cache",
+        methods=["host-chrome-cdp"],
+        chrome_cdp_url="http://127.0.0.1:9222",
+        sleep_seconds=0,
+        max_block_rate=0.4,
+        host_fetcher_factory=FakeBlockedHostFetcher,
+    )
+
+    summary = asyncio.run(enricher.enrich_records(records, max_vehicles=2))
+
+    assert summary["host_chrome_cdp_attempt_count"] == 1
+    assert summary["host_chrome_cdp_blocked_count"] == 1
+    assert summary["host_chrome_disabled"] is True
+    assert summary["host_chrome_cdp_disabled_by_block_rate_count"] == 1

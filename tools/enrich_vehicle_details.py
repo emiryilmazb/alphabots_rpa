@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import random
 import sys
 from collections import Counter
 from collections.abc import Callable, Sequence
@@ -36,6 +37,8 @@ ENRICHMENT_FIELDS = tuple(
         ]
     )
 )
+
+RETRY_ONLY_MISSING_FIELDS = tuple(dict.fromkeys(DETAIL_TARGET_FIELDS))
 
 METHOD_ALIASES = {
     "host_chrome_cdp": "host-chrome-cdp",
@@ -91,6 +94,18 @@ def enrichment_missing_fields(vehicle: dict[str, Any]) -> list[str]:
     return [field for field in ENRICHMENT_FIELDS if not is_present(vehicle.get(field, ""))]
 
 
+def retry_missing_fields(vehicle: dict[str, Any]) -> list[str]:
+    return [field for field in RETRY_ONLY_MISSING_FIELDS if not is_present(vehicle.get(field, ""))]
+
+
+def coverage_pct(records: Sequence[dict[str, Any]], fields: Sequence[str]) -> float:
+    if not records or not fields:
+        return 0.0
+    total = len(records) * len(fields)
+    present = sum(1 for record in records for field in fields if is_present(record.get(field, "")))
+    return round((present / total) * 100, 2)
+
+
 def merge_non_empty_fields(
     vehicle: dict[str, Any],
     parsed_fields: dict[str, Any],
@@ -144,7 +159,12 @@ class DetailEnricher:
         methods: Sequence[str],
         chrome_cdp_url: str,
         sleep_seconds: float,
-        stop_after_blocks: int,
+        sleep_jitter_seconds: float = 0.0,
+        stop_after_blocks: int = 0,
+        max_block_rate: float = 0.0,
+        method_cooldown_blocks: int = 0,
+        method_cooldown_seconds: float = 0.0,
+        retry_only_missing: bool = False,
         resume: bool = True,
         manual_html_dir: Path | None = None,
         failed_ids_path: Path | None = None,
@@ -156,9 +176,14 @@ class DetailEnricher:
         self.parsed_cache_dir = cache_dir / "parsed"
         self.manual_html_dir = manual_html_dir or cache_dir / "manual_html"
         self.failed_ids_path = failed_ids_path or cache_dir / FAILED_IDS_FILENAME
-        self.methods = list(methods)
+        self.methods = self._normalize_methods(methods)
         self.sleep_seconds = max(0.0, sleep_seconds)
+        self.sleep_jitter_seconds = max(0.0, sleep_jitter_seconds)
         self.stop_after_blocks = max(0, stop_after_blocks)
+        self.max_block_rate = max(0.0, max_block_rate)
+        self.method_cooldown_blocks = max(0, method_cooldown_blocks)
+        self.method_cooldown_seconds = max(0.0, method_cooldown_seconds)
+        self.retry_only_missing = retry_only_missing
         self.resume = resume
         self.config = ScraperConfig(
             detail_open_strategy="host-chrome-cdp",
@@ -172,6 +197,8 @@ class DetailEnricher:
         )
         self.host_chrome_disabled = False
         self.existing_disabled = False
+        self.host_chrome_consecutive_blocks = 0
+        self.existing_consecutive_blocks = 0
         self.run_attempted_ids: set[str] = set()
         self.new_failures: list[dict[str, Any]] = []
         self.counts: Counter[str] = Counter()
@@ -187,13 +214,18 @@ class DetailEnricher:
         max_vehicles: int = 0,
     ) -> dict[str, Any]:
         self._ensure_dirs()
+        self.counts["technical_coverage_before_pct"] = coverage_pct(records, VEHICLE_TECHNICAL_FIELDS)
+        self.counts["financing_coverage_before_pct"] = coverage_pct(records, FINANCING_REQUIRED_FIELDS)
         processed = 0
         for index, vehicle in enumerate(records):
             self._ensure_vehicle_shape(vehicle)
             vehicle_id = self._vehicle_id(vehicle, index)
-            missing = enrichment_missing_fields(vehicle)
+            missing = self._candidate_missing_fields(vehicle)
             if not missing:
-                self.counts["already_complete_count"] += 1
+                if self.retry_only_missing:
+                    self.counts["skipped_not_missing_retry_fields_count"] += 1
+                else:
+                    self.counts["already_complete_count"] += 1
                 continue
             if max_vehicles and processed >= max_vehicles:
                 self.counts["skipped_by_limit_count"] += 1
@@ -214,6 +246,8 @@ class DetailEnricher:
                 self.counts["still_missing_vehicle_count"] += 1
 
         self.counts["processed_vehicle_count"] = processed
+        self.counts["technical_coverage_after_pct"] = coverage_pct(records, VEHICLE_TECHNICAL_FIELDS)
+        self.counts["financing_coverage_after_pct"] = coverage_pct(records, FINANCING_REQUIRED_FIELDS)
         self._write_failed_ids()
         summary = self.summary()
         write_json(self.cache_dir / SUMMARY_FILENAME, summary)
@@ -227,6 +261,18 @@ class DetailEnricher:
             "failed_ids_path": str(self.failed_ids_path),
             "summary_path": str(self.cache_dir / SUMMARY_FILENAME),
             **dict(sorted(self.counts.items())),
+            "attempted": int(self.counts.get("processed_vehicle_count", 0)),
+            "success": int(self.counts.get("successful_vehicle_count", 0)),
+            "failed": max(
+                0,
+                int(self.counts.get("processed_vehicle_count", 0))
+                - int(self.counts.get("successful_vehicle_count", 0)),
+            ),
+            "blocked": int(
+                self.counts.get("host_chrome_cdp_blocked_count", 0)
+                + self.counts.get("existing_blocked_count", 0)
+            ),
+            "cache_hit": int(self.counts.get("cache_hit_count", 0)),
             "host_chrome_disabled": self.host_chrome_disabled,
             "existing_disabled": self.existing_disabled,
             "new_failed_detail_ids_count": len(self.new_failures),
@@ -301,7 +347,11 @@ class DetailEnricher:
             reason = result.error_message or result.fallback_reason or result.error_type or "existing_fetch_failed"
             if self._is_blocked(result, reason):
                 self.counts["existing_blocked_count"] += 1
-                self.existing_disabled = True
+                self.existing_consecutive_blocks += 1
+                if await self._handle_block_thresholds("existing"):
+                    self.existing_disabled = True
+            else:
+                self.existing_consecutive_blocks = 0
             self.counts["existing_failed_count"] += 1
             self._record_failure(vehicle, vehicle_id, "existing", url, reason, result=result)
             if self.existing_disabled:
@@ -323,9 +373,9 @@ class DetailEnricher:
         for url in urls:
             self.counts["host_chrome_cdp_attempt_count"] += 1
             result: FetchResult = await fetcher.fetch(url)
-            if self.sleep_seconds:
-                await asyncio.sleep(self.sleep_seconds)
+            await self._sleep_after_live_attempt()
             if result.ok:
+                self.host_chrome_consecutive_blocks = 0
                 parsed = self._parse_successful_html(result.html, url=result.final_url or url)
                 if parsed:
                     self.counts["host_chrome_cdp_success_count"] += 1
@@ -349,8 +399,11 @@ class DetailEnricher:
             )
             if self._is_blocked(result, reason):
                 self.counts["host_chrome_cdp_blocked_count"] += 1
-                if self.stop_after_blocks and self.counts["host_chrome_cdp_blocked_count"] >= self.stop_after_blocks:
+                self.host_chrome_consecutive_blocks += 1
+                if await self._handle_block_thresholds("host-chrome-cdp"):
                     self.host_chrome_disabled = True
+            else:
+                self.host_chrome_consecutive_blocks = 0
             self.counts["host_chrome_cdp_failed_count"] += 1
             self._record_failure(vehicle, vehicle_id, "host-chrome-cdp", url, reason, result=result)
             if self.host_chrome_disabled:
@@ -528,6 +581,55 @@ class DetailEnricher:
             self._host_fetcher = self.host_fetcher_factory(self.config)
         return self._host_fetcher
 
+    def _candidate_missing_fields(self, vehicle: dict[str, Any]) -> list[str]:
+        if self.retry_only_missing:
+            return retry_missing_fields(vehicle)
+        return enrichment_missing_fields(vehicle)
+
+    async def _sleep_after_live_attempt(self) -> None:
+        delay = self.sleep_seconds
+        if self.sleep_jitter_seconds:
+            delay += random.uniform(0.0, self.sleep_jitter_seconds)
+        if delay > 0:
+            self.counts["live_sleep_count"] += 1
+            self.counts["live_sleep_planned_seconds_total"] += round(delay, 2)
+            await asyncio.sleep(delay)
+
+    async def _handle_block_thresholds(self, method: str) -> bool:
+        if method == "host-chrome-cdp":
+            blocked = int(self.counts.get("host_chrome_cdp_blocked_count", 0))
+            attempts = int(self.counts.get("host_chrome_cdp_attempt_count", 0))
+            consecutive = self.host_chrome_consecutive_blocks
+            disabled_counter = "host_chrome_cdp_disabled_by_threshold_count"
+            cooldown_counter = "host_chrome_cdp_cooldown_count"
+        else:
+            blocked = int(self.counts.get("existing_blocked_count", 0))
+            attempts = int(self.counts.get("existing_attempt_count", 0))
+            consecutive = self.existing_consecutive_blocks
+            disabled_counter = "existing_disabled_by_threshold_count"
+            cooldown_counter = "existing_cooldown_count"
+
+        if self.method_cooldown_blocks and consecutive >= self.method_cooldown_blocks:
+            if self.method_cooldown_seconds > 0:
+                self.counts[cooldown_counter] += 1
+                await asyncio.sleep(self.method_cooldown_seconds)
+                if method == "host-chrome-cdp":
+                    self.host_chrome_consecutive_blocks = 0
+                else:
+                    self.existing_consecutive_blocks = 0
+                return False
+            self.counts[disabled_counter] += 1
+            return True
+
+        if self.stop_after_blocks and blocked >= self.stop_after_blocks:
+            self.counts[disabled_counter] += 1
+            return True
+
+        if self.max_block_rate and attempts > 0 and (blocked / attempts) > self.max_block_rate:
+            self.counts[f"{method.replace('-', '_')}_disabled_by_block_rate_count"] += 1
+            return True
+        return False
+
     @staticmethod
     def _validate_existing_result(result: FetchResult) -> StaticValidation:
         base = FetchStrategyManager.validate_static_html(result)
@@ -563,6 +665,15 @@ class DetailEnricher:
         ]
         return any(marker in text for marker in blocked_markers)
 
+    @staticmethod
+    def _normalize_methods(methods: Sequence[str]) -> list[str]:
+        normalized = list(methods)
+        if "cache" in normalized:
+            normalized = ["cache", *[method for method in normalized if method != "cache"]]
+        else:
+            normalized.insert(0, "cache")
+        return normalized
+
 
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     input_cars = Path(args.input_cars)
@@ -574,7 +685,12 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         methods=methods,
         chrome_cdp_url=args.chrome_cdp_url,
         sleep_seconds=args.sleep_seconds,
+        sleep_jitter_seconds=args.sleep_jitter_seconds,
         stop_after_blocks=args.stop_after_blocks,
+        max_block_rate=args.max_block_rate,
+        method_cooldown_blocks=args.method_cooldown_blocks,
+        method_cooldown_seconds=args.method_cooldown_seconds,
+        retry_only_missing=args.retry_only_missing.lower() == "true",
         resume=args.resume.lower() == "true",
         manual_html_dir=Path(args.manual_html_dir) if args.manual_html_dir else None,
         failed_ids_path=Path(args.failed_ids_path) if args.failed_ids_path else None,
@@ -607,7 +723,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--chrome-cdp-url", default="http://127.0.0.1:9222")
     parser.add_argument("--max-vehicles", type=int, default=0, help="0 means no limit")
     parser.add_argument("--sleep-seconds", type=float, default=0.0)
+    parser.add_argument("--sleep-jitter-seconds", type=float, default=0.0)
     parser.add_argument("--stop-after-blocks", type=int, default=0, help="0 disables block threshold")
+    parser.add_argument("--max-block-rate", type=float, default=0.0, help="0 disables block-rate stopping")
+    parser.add_argument("--method-cooldown-blocks", type=int, default=0, help="0 disables consecutive-block cooldown")
+    parser.add_argument("--method-cooldown-seconds", type=float, default=0.0)
+    parser.add_argument("--retry-only-missing", choices=["true", "false"], default="false")
     parser.add_argument("--resume", choices=["true", "false"], default="true")
     parser.add_argument("--manual-html-dir", default="")
     parser.add_argument("--failed-ids-path", default="")
