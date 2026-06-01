@@ -23,6 +23,8 @@ class ScraperConfig:
     """Central configuration for the mobile.de scraper pipeline."""
 
     # ── Target ────────────────────────────────────────────────────────────
+    uc_wait_profile: str = 'safe'
+    uc_block_resources: str = 'false'
     state: str = "nordrhein-westfalen"
     base_url: str = "https://home.mobile.de"
     regional_url: str = "https://home.mobile.de/regional"
@@ -32,8 +34,12 @@ class ScraperConfig:
     max_vendors: int = 0
     max_cars_per_vendor: int = 0
     max_pages_per_state: int = 0
+    discover_only: bool = False
+    max_regional_pages: int = 0
     skip_vehicle_details: bool = False
     traverse_vehicle_categories: bool = True
+    category_traversal: str = "discovered"
+    use_storage_state: bool = True
     max_detail_failures: int = 2
 
     # ── Browser ───────────────────────────────────────────────────────────
@@ -50,14 +56,49 @@ class ScraperConfig:
     user_data_dir: Path | None = None
     storage_state: Path | None = None
     run_id: str = ""
+    process_existing: bool = False
+    benchmark: bool = False
+    overwrite: bool = False
+    regional_discovered_count: int = 0
+    enqueued_vendor_count: int = 0
+    processed_vendor_count: int = 0
+    cookie_modal_visible_count: int = 0
+    cookie_consent_click_count: int = 0
+    cookie_modal_remaining_count: int = 0
+    vehicle_detail_jobs_total: int = 0
+    detail_needed_count: int = 0
+    detail_skipped_count: int = 0
+    detail_attempted_count: int = 0
+    detail_success_count: int = 0
+    detail_failed_count: int = 0
+    detail_fetch_403_count: int = 0
+    detail_fetch_503_count: int = 0
+    detail_fetch_failed_count: int = 0
+    listing_fallback_used_count: int = 0
+    detail_site_blocked_or_503_count: int = 0
+    detail_error_page_detected_count: int = 0
+    detail_browser_closed_after_failure_count: int = 0
+    regional_browser_opened_count: int = 0
+    vendor_browser_opened_count: int = 0
+    vehicle_detail_browser_opened_count: int = 0
+    active_playwright_browser_count: int = 0
+    max_active_playwright_browser_count: int = 0
+    idle_about_blank_count: int = 0
+    host_chrome_cdp_used_count: int = 0
+    host_chrome_cdp_success_count: int = 0
+    host_chrome_cdp_failed_count: int = 0
+    host_chrome_cdp_blocked_count: int = 0
 
     # ── Pipeline ──────────────────────────────────────────────────────────
-    pipeline_mode: str = "legacy"
+    pipeline_mode: str = "sqlite"
     regional_concurrency: int = 1
     vendor_concurrency: int = 1
     vehicle_listing_concurrency: int = 1
     vehicle_detail_concurrency: int = 1
     detail_policy: str = "missing-required"
+    detail_open_strategy: str = "auto"
+    chrome_cdp_url: str = "http://127.0.0.1:9222"
+    idle_browser_timeout_seconds: float = 15.0
     flush_every: int = 100
 
     # ── Rate limiting ─────────────────────────────────────────────────────
@@ -66,6 +107,7 @@ class ScraperConfig:
 
     # ── Retry ─────────────────────────────────────────────────────────────
     max_retries: int = 3
+    detail_max_retries: int = 1
     retry_delay: float = 5.0
 
     # ── Resume / checkpoint ───────────────────────────────────────────────
@@ -79,6 +121,7 @@ class ScraperConfig:
     # ── Paths ─────────────────────────────────────────────────────────────
     project_root: Path = field(default_factory=lambda: Path(__file__).resolve().parent.parent)
     output_dir_override: Path | None = None
+    input_dir_override: Path | None = None
 
     def __post_init__(self) -> None:
         self.browser = self.browser.lower()
@@ -106,6 +149,8 @@ class ScraperConfig:
         self.detail_policy = self.detail_policy.lower()
         if self.detail_policy not in VALID_DETAIL_POLICIES:
             raise ValueError(f"Unsupported detail policy: {self.detail_policy}")
+        self.detail_open_strategy = self.detail_open_strategy.lower()
+        self.chrome_cdp_url = str(self.chrome_cdp_url or "http://127.0.0.1:9222")
         self.flush_every = max(1, int(self.flush_every))
         if self.clean_run:
             self.resume = False
@@ -120,7 +165,15 @@ class ScraperConfig:
 
     @property
     def data_dir(self) -> Path:
-        return self.project_root / "data"
+        base = self.project_root / "data"
+        if not self.overwrite and self.run_id:
+            raw_cars = base / "raw" / "cars_raw.json"
+            db_file = base / "state" / f"mobile_de_{self.state.replace('-', '_')}.sqlite3"
+            raw_exists = raw_cars.exists() and raw_cars.stat().st_size > 50000
+            db_exists = db_file.exists() and db_file.stat().st_size > 50000
+            if raw_exists or db_exists:
+                return base / "runs" / self.run_id
+        return base
 
     @property
     def raw_dir(self) -> Path:
@@ -206,13 +259,15 @@ def parse_args() -> ScraperConfig:
     parser.add_argument("--skip-vehicle-details", type=str, default=os.getenv("SKIP_VEHICLE_DETAILS", "false"),
                         choices=["true", "false"],
                         help="Use dealer listing-card data only and skip detail pages")
-    parser.add_argument("--traverse-vehicle-categories", type=str, default=os.getenv("TRAVERSE_VEHICLE_CATEGORIES", "true"),
-                        choices=["true", "false"],
-                        help="Visit all known mobile.de vehicle categories for each vendor")
+    parser.add_argument("--traverse-vehicle-categories", type=str, default=os.getenv("TRAVERSE_VEHICLE_CATEGORIES", "true"), choices=["true", "false"], help="Legacy boolean")
+    parser.add_argument("--category-traversal", type=str, default=os.getenv("CATEGORY_TRAVERSAL", "discovered"), choices=["discovered", "all", "off"], help="Category traversal mode")
+    parser.add_argument("--use-storage-state", type=str, default=os.getenv("USE_STORAGE_STATE", "true"), choices=["true", "false"])
     parser.add_argument("--max-detail-failures", type=int, default=int(os.getenv("MAX_DETAIL_FAILURES", "2")),
                         help="Disable detail-page requests after this many blocked/5xx detail failures")
     parser.add_argument("--max-retries", type=int, default=int(os.getenv("MAX_RETRIES", "3")),
                         help="Maximum navigation/fetch retries per URL")
+    parser.add_argument("--detail-max-retries", type=int, default=int(os.getenv("DETAIL_MAX_RETRIES", "1")),
+                        help="Maximum Playwright navigation retries for vehicle detail pages")
     parser.add_argument("--retry-delay", type=float, default=float(os.getenv("RETRY_DELAY", "5.0")),
                         help="Base retry delay in seconds")
     parser.add_argument("--browser", default=os.getenv("BROWSER", "chromium"),
@@ -248,7 +303,7 @@ def parse_args() -> ScraperConfig:
                         help="Optional persistent Playwright profile directory")
     parser.add_argument("--storage-state", default=os.getenv("STORAGE_STATE"),
                         help="Optional Playwright storage_state JSON path to load/save cookies/session state")
-    parser.add_argument("--pipeline-mode", default=os.getenv("PIPELINE_MODE", "legacy"),
+    parser.add_argument("--pipeline-mode", default=os.getenv("PIPELINE_MODE", "sqlite"),
                         choices=sorted(VALID_PIPELINE_MODES),
                         help="Execution engine. legacy keeps the existing sequential scraper; sqlite enables the durable queue pipeline.")
     parser.add_argument("--regional-concurrency", type=int, default=int(os.getenv("REGIONAL_CONCURRENCY", "1")),
@@ -261,9 +316,15 @@ def parse_args() -> ScraperConfig:
     parser.add_argument("--vehicle-detail-concurrency", type=int,
                         default=int(os.getenv("VEHICLE_DETAIL_CONCURRENCY", "1")),
                         help="Concurrent vehicle detail workers for sqlite pipeline")
+    parser.add_argument("--detail-open-strategy", type=str, default=os.getenv("DETAIL_OPEN_STRATEGY", "auto"))
+    parser.add_argument("--chrome-cdp-url", type=str, default=os.getenv("CHROME_CDP_URL", "http://127.0.0.1:9222"),
+                        help="Existing host Chrome remote debugging endpoint for --detail-open-strategy host-chrome-cdp")
     parser.add_argument("--detail-policy", default=os.getenv("DETAIL_POLICY", "missing-required"),
                         choices=sorted(VALID_DETAIL_POLICIES),
                         help="When vehicle detail pages are fetched after listing/card parsing")
+    parser.add_argument("--idle-browser-timeout-seconds", type=float,
+                        default=float(os.getenv("IDLE_BROWSER_TIMEOUT_SECONDS", "15")),
+                        help="Close reusable worker browsers after this many idle seconds (0 disables idle close)")
     parser.add_argument("--resume", type=str, default=os.getenv("RESUME", "true"),
                         choices=["true", "false"],
                         help="Resume from checkpoint")
@@ -283,12 +344,18 @@ def parse_args() -> ScraperConfig:
                         help="Save JSON checkpoints after this many new records (0 = final save only)")
     parser.add_argument("--flush-every", type=int, default=int(os.getenv("FLUSH_EVERY", "100")),
                         help="Batch flush size for durable writers")
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing >50KB files")
+    parser.add_argument("--process-existing", "--skip-scrape", action="store_true")
+    parser.add_argument("--benchmark", action="store_true")
+    parser.add_argument("--input-dir")
     parser.add_argument("--output-dir", default=os.getenv("OUTPUT_DIR"),
                         help="Optional directory for final Excel/Word/errors outputs")
     parser.add_argument("--min-delay", type=float, default=float(os.getenv("MIN_DELAY", "2.0")),
                         help="Min delay between requests (seconds)")
     parser.add_argument("--max-delay", type=float, default=float(os.getenv("MAX_DELAY", "5.0")),
                         help="Max delay between requests (seconds)")
+    parser.add_argument("--uc-wait-profile", default=os.getenv("UC_WAIT_PROFILE", "safe"), choices=["safe", "adaptive"], help="Wait profile for undetected-chromedriver")
+    parser.add_argument("--uc-block-resources", default=os.getenv("UC_BLOCK_RESOURCES", "false"), choices=["true", "false"], help="Block images/fonts in undetected-chromedriver")
 
     args = parser.parse_args()
     headless = args.headless.lower() == "true" if args.headless is not None else False
@@ -302,14 +369,19 @@ def parse_args() -> ScraperConfig:
 
     return ScraperConfig(
         state=args.state,
+        uc_wait_profile=args.uc_wait_profile,
+        uc_block_resources=args.uc_block_resources.lower(),
         start_url=args.start_url,
         max_vendors=args.max_vendors,
         max_cars_per_vendor=max_cars_per_vendor,
         max_pages_per_state=args.max_pages,
         skip_vehicle_details=args.skip_vehicle_details.lower() == "true",
         traverse_vehicle_categories=args.traverse_vehicle_categories.lower() == "true",
+        category_traversal=args.category_traversal,
+        use_storage_state=args.use_storage_state.lower() == "true",
         max_detail_failures=args.max_detail_failures,
         max_retries=args.max_retries,
+        detail_max_retries=max(1, args.detail_max_retries),
         retry_delay=args.retry_delay,
         browser=args.browser,
         browser_mode=browser_mode,
@@ -321,13 +393,20 @@ def parse_args() -> ScraperConfig:
         curl_concurrency=args.curl_concurrency,
         playwright_concurrency=args.playwright_concurrency,
         user_data_dir=Path(args.user_data_dir) if args.user_data_dir else None,
-        storage_state=Path(args.storage_state) if args.storage_state else None,
+        storage_state=Path(args.storage_state) if args.storage_state else (
+            Path(__file__).resolve().parent.parent / "data" / "browser_state" / "mobile_de_storage_state.json"
+        ),
         pipeline_mode=args.pipeline_mode,
+        process_existing=args.process_existing,
+        benchmark=args.benchmark,
         regional_concurrency=args.regional_concurrency,
         vendor_concurrency=args.vendor_concurrency,
         vehicle_listing_concurrency=args.vehicle_listing_concurrency,
         vehicle_detail_concurrency=args.vehicle_detail_concurrency,
         detail_policy=args.detail_policy,
+        detail_open_strategy=getattr(args, "detail_open_strategy", "auto"),
+        chrome_cdp_url=args.chrome_cdp_url,
+        idle_browser_timeout_seconds=max(0.0, args.idle_browser_timeout_seconds),
         resume=args.resume.lower() == "true",
         clean_run=args.clean_run.lower() == "true",
         force_resume=args.force_resume.lower() == "true",
@@ -335,7 +414,9 @@ def parse_args() -> ScraperConfig:
         clear_state=args.clear_state.lower() == "true",
         checkpoint_every=max(0, args.checkpoint_every),
         flush_every=max(1, args.flush_every),
+        overwrite=getattr(args, "overwrite", False),
         output_dir_override=Path(args.output_dir) if args.output_dir else None,
+        input_dir_override=Path(args.input_dir) if getattr(args, "input_dir", None) else None,
         min_delay=args.min_delay,
         max_delay=args.max_delay,
     )

@@ -34,6 +34,7 @@ def config_hash(config: ScraperConfig) -> str:
         "max_pages_per_state": config.max_pages_per_state,
         "skip_vehicle_details": config.skip_vehicle_details,
         "traverse_vehicle_categories": config.traverse_vehicle_categories,
+        "category_traversal": config.category_traversal,
         "fetch_strategy": config.fetch_strategy,
         "pipeline_mode": config.pipeline_mode,
         "detail_policy": config.detail_policy,
@@ -132,17 +133,17 @@ class StateStore:
             )
             conn.commit()
 
-    async def requeue_processing_jobs(self) -> None:
+    async def requeue_processing_jobs(self, run_id: str = "") -> None:
         """Move interrupted processing jobs back to queued for safe resume."""
         async with self._lock:
             conn = self._require_conn()
             conn.execute(
-                "UPDATE vendors SET status = ? WHERE status = ?",
-                (STATUS_QUEUED, STATUS_PROCESSING),
+                "UPDATE vendors SET status = ? WHERE status = ? AND (? = '' OR run_id = ?)",
+                (STATUS_QUEUED, STATUS_PROCESSING, run_id, run_id),
             )
             conn.execute(
-                "UPDATE vehicle_jobs SET status = ? WHERE status = ?",
-                (STATUS_QUEUED, STATUS_PROCESSING),
+                "UPDATE vehicle_jobs SET status = ? WHERE status = ? AND (? = '' OR run_id = ?)",
+                (STATUS_QUEUED, STATUS_PROCESSING, run_id, run_id),
             )
             conn.commit()
 
@@ -168,14 +169,15 @@ class StateStore:
             for index, dealer in enumerate(prepared, start=1):
                 url = dealer["url"]
                 existing = conn.execute(
-                    "SELECT haendler_id, status FROM vendors WHERE normalized_vendor_url = ?",
+                    "SELECT haendler_id, status, run_id FROM vendors WHERE normalized_vendor_url = ?",
                     (url,),
                 ).fetchone()
-                haendler_id = existing["haendler_id"] if existing else f"C{next_id:07d}"
+                haendler_id = existing["haendler_id"] if existing else f"C{dealer.get('global_index', next_id):07d}"
                 if not existing:
                     next_id += 1
                 status = existing["status"] if existing else STATUS_QUEUED
-                if status == STATUS_DONE:
+                same_run = bool(existing and existing["run_id"] == run_id)
+                if same_run and status == STATUS_DONE:
                     continue
                 conn.execute(
                     """
@@ -186,10 +188,15 @@ class StateStore:
                         run_id = excluded.run_id,
                         haendler_id = vendors.haendler_id,
                         dealer_json = excluded.dealer_json,
+                        vendor_json = CASE
+                            WHEN vendors.run_id = excluded.run_id THEN vendors.vendor_json
+                            ELSE NULL
+                        END,
                         status = CASE
-                            WHEN vendors.status = 'done' THEN vendors.status
+                            WHEN vendors.run_id = excluded.run_id AND vendors.status = 'done' THEN vendors.status
                             ELSE excluded.status
                         END,
+                        last_error = NULL,
                         updated_at = excluded.updated_at
                     """,
                     (
@@ -201,19 +208,19 @@ class StateStore:
                         now,
                     ),
                 )
-                if status != STATUS_DONE:
+                if not same_run or status != STATUS_DONE:
                     jobs.append(VendorJob(url, haendler_id, {**dealer, "url": url}))
             conn.commit()
         return jobs
 
-    async def pending_vendor_jobs(self, limit: int = 0) -> list[VendorJob]:
+    async def pending_vendor_jobs(self, run_id: str = "", limit: int = 0) -> list[VendorJob]:
         query = """
             SELECT normalized_vendor_url, haendler_id, dealer_json
             FROM vendors
-            WHERE status IN (?, ?)
+            WHERE (? = '' OR run_id = ?) AND status IN (?, ?)
             ORDER BY haendler_id
         """
-        params: list[Any] = [STATUS_QUEUED, STATUS_FAILED]
+        params: list[Any] = [run_id, run_id, STATUS_QUEUED, STATUS_FAILED]
         if limit > 0:
             query += " LIMIT ?"
             params.append(limit)
@@ -224,32 +231,33 @@ class StateStore:
             for row in rows
         ]
 
-    async def mark_vendor_processing(self, normalized_vendor_url: str) -> None:
-        await self._set_status("vendors", "normalized_vendor_url", normalized_vendor_url, STATUS_PROCESSING)
+    async def mark_vendor_processing(self, normalized_vendor_url: str, run_id: str = "") -> None:
+        await self._set_status("vendors", "normalized_vendor_url", normalized_vendor_url, STATUS_PROCESSING, run_id)
 
     async def save_vendor_done(self, normalized_vendor_url: str, vendor: dict[str, Any]) -> None:
         async with self._lock:
             conn = self._require_conn()
+            run_id = str(vendor.get("run_id", ""))
             conn.execute(
                 """
                 UPDATE vendors
                 SET vendor_json = ?, status = ?, updated_at = ?
-                WHERE normalized_vendor_url = ?
+                WHERE normalized_vendor_url = ? AND (? = '' OR run_id = ?)
                 """,
-                (_json_dumps(vendor), STATUS_DONE, utc_now(), normalized_vendor_url),
+                (_json_dumps(vendor), STATUS_DONE, utc_now(), normalized_vendor_url, run_id, run_id),
             )
             conn.commit()
 
-    async def mark_vendor_failed(self, normalized_vendor_url: str, error: str) -> None:
+    async def mark_vendor_failed(self, normalized_vendor_url: str, error: str, run_id: str = "") -> None:
         async with self._lock:
             conn = self._require_conn()
             conn.execute(
                 """
                 UPDATE vendors
                 SET status = ?, last_error = ?, updated_at = ?
-                WHERE normalized_vendor_url = ?
+                WHERE normalized_vendor_url = ? AND (? = '' OR run_id = ?)
                 """,
-                (STATUS_FAILED, error, utc_now(), normalized_vendor_url),
+                (STATUS_FAILED, error, utc_now(), normalized_vendor_url, run_id, run_id),
             )
             conn.commit()
 
@@ -270,10 +278,11 @@ class StateStore:
                 if not vehicle_url:
                     continue
                 existing = conn.execute(
-                    "SELECT status FROM vehicle_jobs WHERE vehicle_url = ?",
+                    "SELECT status, run_id FROM vehicle_jobs WHERE vehicle_url = ?",
                     (vehicle_url,),
                 ).fetchone()
-                if existing and existing["status"] == STATUS_DONE:
+                same_run = bool(existing and existing["run_id"] == run_id)
+                if same_run and existing["status"] == STATUS_DONE:
                     continue
                 conn.execute(
                     """
@@ -288,9 +297,14 @@ class StateStore:
                         vendor_info_json = excluded.vendor_info_json,
                         fallback_json = excluded.fallback_json,
                         status = CASE
-                            WHEN vehicle_jobs.status = 'done' THEN vehicle_jobs.status
+                            WHEN vehicle_jobs.run_id = excluded.run_id AND vehicle_jobs.status = 'done' THEN vehicle_jobs.status
                             ELSE excluded.status
                         END,
+                        attempts = CASE
+                            WHEN vehicle_jobs.run_id = excluded.run_id THEN vehicle_jobs.attempts
+                            ELSE 0
+                        END,
+                        last_error = NULL,
                         updated_at = excluded.updated_at
                     """,
                     (
@@ -304,19 +318,19 @@ class StateStore:
                         now,
                     ),
                 )
-                if not existing or existing["status"] != STATUS_DONE:
+                if not same_run or existing["status"] != STATUS_DONE:
                     jobs.append(VehicleJob(vehicle_url, normalized_vendor_url, haendler_id, vendor_info, entry))
             conn.commit()
         return jobs
 
-    async def pending_vehicle_jobs(self, limit: int = 0) -> list[VehicleJob]:
+    async def pending_vehicle_jobs(self, run_id: str = "", limit: int = 0) -> list[VehicleJob]:
         query = """
             SELECT vehicle_url, normalized_vendor_url, haendler_id, vendor_info_json, fallback_json
             FROM vehicle_jobs
-            WHERE status IN (?, ?)
+            WHERE (? = '' OR run_id = ?) AND status IN (?, ?)
             ORDER BY rowid
         """
-        params: list[Any] = [STATUS_QUEUED, STATUS_FAILED]
+        params: list[Any] = [run_id, run_id, STATUS_QUEUED, STATUS_FAILED]
         if limit > 0:
             query += " LIMIT ?"
             params.append(limit)
@@ -333,16 +347,16 @@ class StateStore:
             for row in rows
         ]
 
-    async def mark_vehicle_processing(self, vehicle_url: str) -> None:
+    async def mark_vehicle_processing(self, vehicle_url: str, run_id: str = "") -> None:
         async with self._lock:
             conn = self._require_conn()
             conn.execute(
                 """
                 UPDATE vehicle_jobs
                 SET status = ?, attempts = attempts + 1, updated_at = ?
-                WHERE vehicle_url = ?
+                WHERE vehicle_url = ? AND (? = '' OR run_id = ?)
                 """,
-                (STATUS_PROCESSING, utc_now(), vehicle_url),
+                (STATUS_PROCESSING, utc_now(), vehicle_url, run_id, run_id),
             )
             conn.commit()
 
@@ -374,22 +388,22 @@ class StateStore:
                 """
                 UPDATE vehicle_jobs
                 SET status = ?, updated_at = ?
-                WHERE vehicle_url = ?
+                WHERE vehicle_url = ? AND (? = '' OR run_id = ?)
                 """,
-                (STATUS_DONE, now, vehicle_url),
+                (STATUS_DONE, now, vehicle_url, vehicle.get("run_id", ""), vehicle.get("run_id", "")),
             )
             conn.commit()
 
-    async def mark_vehicle_failed(self, vehicle_url: str, error: str) -> None:
+    async def mark_vehicle_failed(self, vehicle_url: str, error: str, run_id: str = "") -> None:
         async with self._lock:
             conn = self._require_conn()
             conn.execute(
                 """
                 UPDATE vehicle_jobs
                 SET status = ?, last_error = ?, updated_at = ?
-                WHERE vehicle_url = ?
+                WHERE vehicle_url = ? AND (? = '' OR run_id = ?)
                 """,
-                (STATUS_FAILED, error, utc_now(), vehicle_url),
+                (STATUS_FAILED, error, utc_now(), vehicle_url, run_id, run_id),
             )
             conn.commit()
 
@@ -420,16 +434,16 @@ class StateStore:
             )
             conn.commit()
 
-    async def export_vendors(self) -> list[dict[str, Any]]:
+    async def export_vendors(self, run_id: str = "") -> list[dict[str, Any]]:
         async with self._lock:
             rows = self._require_conn().execute(
                 """
                 SELECT vendor_json, haendler_id, normalized_vendor_url
                 FROM vendors
-                WHERE status = ? AND vendor_json IS NOT NULL
+                WHERE status = ? AND vendor_json IS NOT NULL AND (? = '' OR run_id = ?)
                 ORDER BY haendler_id
                 """,
-                (STATUS_DONE,),
+                (STATUS_DONE, run_id, run_id),
             ).fetchall()
         vendors = []
         for row in rows:
@@ -439,41 +453,44 @@ class StateStore:
             vendors.append(vendor)
         return vendors
 
-    async def export_vehicles(self) -> list[dict[str, Any]]:
+    async def export_vehicles(self, run_id: str = "") -> list[dict[str, Any]]:
         async with self._lock:
             rows = self._require_conn().execute(
                 """
                 SELECT data_json
                 FROM vehicles
-                WHERE status = ?
+                WHERE status = ? AND (? = '' OR run_id = ?)
                 ORDER BY haendler_id, vehicle_url
                 """,
-                (STATUS_DONE,),
+                (STATUS_DONE, run_id, run_id),
             ).fetchall()
         return [_json_loads(row["data_json"]) for row in rows]
 
-    async def export_errors(self) -> list[dict[str, Any]]:
+    async def export_errors(self, run_id: str = "") -> list[dict[str, Any]]:
         async with self._lock:
             rows = self._require_conn().execute(
                 """
                 SELECT run_id, timestamp, stage, url, status_code, fetch_strategy,
                        browser, attempt, error_type, error_message, screenshot_path, html_dump_path
                 FROM errors
+                WHERE ? = '' OR run_id = ?
                 ORDER BY id
-                """
+                """,
+                (run_id, run_id),
             ).fetchall()
         return [dict(row) for row in rows]
 
-    async def count_by_status(self, table: str) -> dict[str, int]:
+    async def count_by_status(self, table: str, run_id: str = "") -> dict[str, int]:
         if table not in {"vendors", "vehicle_jobs"}:
             raise ValueError(f"Unsupported status table: {table}")
         async with self._lock:
             rows = self._require_conn().execute(
-                f"SELECT status, COUNT(*) AS count FROM {table} GROUP BY status"
+                f"SELECT status, COUNT(*) AS count FROM {table} WHERE ? = '' OR run_id = ? GROUP BY status",
+                (run_id, run_id),
             ).fetchall()
         return {row["status"]: int(row["count"]) for row in rows}
 
-    async def _set_status(self, table: str, key: str, value: str, status: str) -> None:
+    async def _set_status(self, table: str, key: str, value: str, status: str, run_id: str = "") -> None:
         if table not in {"vendors", "vehicle_jobs"}:
             raise ValueError(f"Unsupported status table: {table}")
         if key not in {"normalized_vendor_url", "vehicle_url"}:
@@ -481,8 +498,8 @@ class StateStore:
         async with self._lock:
             conn = self._require_conn()
             conn.execute(
-                f"UPDATE {table} SET status = ?, updated_at = ? WHERE {key} = ?",
-                (status, utc_now(), value),
+                f"UPDATE {table} SET status = ?, updated_at = ? WHERE {key} = ? AND (? = '' OR run_id = ?)",
+                (status, utc_now(), value, run_id, run_id),
             )
             conn.commit()
 

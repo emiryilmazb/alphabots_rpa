@@ -61,7 +61,7 @@ def _value_summary(df: pd.DataFrame, source_col: str, out_col: str) -> pd.DataFr
     columns = [out_col, "Count", "Share"]
     if df.empty or source_col not in df.columns:
         return pd.DataFrame(columns=columns)
-    fallback = "Andere" if out_col in {"Category", "Origin"} else "Unknown"
+    fallback = "Andere" if out_col in {"Category", "Origin"} else "Andere"
     series = df[source_col].replace("", pd.NA).fillna(fallback)
     table = series.value_counts(dropna=False).reset_index()
     table.columns = [out_col, "Count"]
@@ -77,7 +77,7 @@ def _category_by_manufacturer(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty or not required.issubset(df.columns):
         return pd.DataFrame(columns=columns)
     work = df.copy()
-    work["Markes"] = work["Markes"].replace("", pd.NA).fillna("Unknown")
+    work["Markes"] = work["Markes"].replace("", pd.NA).fillna("Andere")
     work[category_col] = work[category_col].replace("", pd.NA).fillna("Andere")
     return (
         work.groupby(["Markes", category_col])

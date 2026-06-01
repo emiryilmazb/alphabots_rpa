@@ -1,8 +1,12 @@
 # Python
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
 venv/
 env/
 .env
@@ -10,8 +14,11 @@ env/
 # Logs
 logs/
 *.log
+*.tmp
+*.bak
 
 # Data and Output
+data/runs/
 data/checkpoints/*
 !data/checkpoints/.gitkeep
 data/output/*
@@ -28,6 +35,39 @@ data/browser_profile/*
 !data/browser_profile/.gitkeep
 data/browser_state/*
 !data/browser_state/.gitkeep
+data/runs/*
+!data/runs/.gitkeep
+data/detail_cache/
+data/enriched_output/
+data/final_submission_input/
+data/final_submission_output/
+final_delivery/
 
-# DELETE BEFORE COMMITTING
-*/graphify-out/*
+
+logs_shards/
+data/merged/
+data_shards/
+data_shards_*/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+archive/experiments/
+# Ad-hoc logs
+*_out.json
+*_out.txt
+*_log.txt
+debug_*.json
+debug_*.txt
+poc_out.json
+sanity_out.json
+exp_results.json
+shard_results.json
+final_sanity.json
+tmp_*.txt
+first_car_dump.txt
+
+# Generated Dashboard/Reports
+mobile_de_nrw_dashboard*.xlsx
+mobile_de_nrw_report*.docx
+benchmark_*.json
+adaptive_*.json

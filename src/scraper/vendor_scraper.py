@@ -25,6 +25,51 @@ from src.scraper.parsers import (
 logger = logging.getLogger("mobile_de.vendor")
 
 
+GERMAN_POSTCODE_STATE_RANGES: tuple[tuple[range, str], ...] = (
+    (range(1000, 1999 + 1), "Sachsen"),
+    (range(2000, 2999 + 1), "Brandenburg"),
+    (range(3000, 4999 + 1), "Brandenburg"),
+    (range(6000, 6999 + 1), "Sachsen-Anhalt"),
+    (range(7000, 7999 + 1), "Thüringen"),
+    (range(8000, 9999 + 1), "Sachsen"),
+    (range(10000, 10999 + 1), "Berlin"),
+    (range(11000, 13999 + 1), "Berlin"),
+    (range(14000, 14999 + 1), "Brandenburg"),
+    (range(15000, 19999 + 1), "Brandenburg"),
+    (range(20000, 22999 + 1), "Hamburg"),
+    (range(23000, 23999 + 1), "Schleswig-Holstein"),
+    (range(24000, 25999 + 1), "Schleswig-Holstein"),
+    (range(26000, 26999 + 1), "Niedersachsen"),
+    (range(27000, 28999 + 1), "Niedersachsen"),
+    (range(29000, 29999 + 1), "Niedersachsen"),
+    (range(30000, 31999 + 1), "Niedersachsen"),
+    (range(32000, 32999 + 1), "Nordrhein-Westfalen"),
+    (range(33000, 33999 + 1), "Nordrhein-Westfalen"),
+    (range(34000, 34999 + 1), "Hessen"),
+    (range(35000, 36999 + 1), "Hessen"),
+    (range(37000, 37999 + 1), "Niedersachsen"),
+    (range(38000, 38999 + 1), "Niedersachsen"),
+    (range(39000, 39999 + 1), "Sachsen-Anhalt"),
+    (range(40000, 42999 + 1), "Nordrhein-Westfalen"),
+    (range(44000, 48999 + 1), "Nordrhein-Westfalen"),
+    (range(49000, 49999 + 1), "Niedersachsen"),
+    (range(50000, 53999 + 1), "Nordrhein-Westfalen"),
+    (range(54000, 54999 + 1), "Rheinland-Pfalz"),
+    (range(55000, 55999 + 1), "Rheinland-Pfalz"),
+    (range(56000, 56999 + 1), "Rheinland-Pfalz"),
+    (range(57000, 59999 + 1), "Nordrhein-Westfalen"),
+    (range(60000, 65999 + 1), "Hessen"),
+    (range(66000, 66999 + 1), "Saarland"),
+    (range(67000, 67999 + 1), "Rheinland-Pfalz"),
+    (range(68000, 69999 + 1), "Baden-Württemberg"),
+    (range(70000, 79999 + 1), "Baden-Württemberg"),
+    (range(80000, 87999 + 1), "Bayern"),
+    (range(88000, 89999 + 1), "Baden-Württemberg"),
+    (range(90000, 99999 + 1), "Bayern"),
+)
+GERMAN_STATE_NAMES = {state for _, state in GERMAN_POSTCODE_STATE_RANGES}
+
+
 class VendorScraper:
     """Extracts detailed information from a dealer's mobile.de page."""
 
@@ -53,8 +98,12 @@ class VendorScraper:
             "Standort": dealer_entry.get("street", ""),
             "PLZ": dealer_entry.get("plz", ""),
             "Städte": dealer_entry.get("city", ""),
-            "Bundesland": bundesland,
-            "Land": "Deutschland",
+            "Bundesland": _actual_region_for_vendor(
+                dealer_entry.get("country", ""),
+                dealer_entry.get("plz", ""),
+                dealer_entry.get("region", ""),
+            ),
+            "Land": _normalize_country_name(dealer_entry.get("country", "")),
             "Telephone Number": "",
             "2. Telephone Number": "",
             "MobilTelefon": "",
@@ -63,11 +112,13 @@ class VendorScraper:
             "Hauptseite": "",
             "Mobile.de_Links": url,
             "Anzahl der Fahrzeuge": None,
+            "search_state": bundesland,
         }
 
         fetch_result = await self.fetch_manager.fetch(url, validator=self._validate_vendor_static)
         if not fetch_result.ok:
             logger.warning("Failed to load vendor page: %s", url)
+            _finalize_location_fields(vendor)
             return vendor
 
         vendor["fetch_strategy"] = fetch_result.strategy
@@ -81,6 +132,7 @@ class VendorScraper:
 
         # 3. Open "Über uns" / contact modal for details not in payloads.
         await self._extract_ueber_uns(vendor)
+        _finalize_location_fields(vendor)
 
         return vendor
 
@@ -96,6 +148,7 @@ class VendorScraper:
             vendor["PLZ"] = next_data.get("plz") or vendor["PLZ"]
             vendor["Städte"] = next_data.get("city") or vendor["Städte"]
             vendor["Land"] = next_data.get("country") or vendor["Land"]
+            vendor["Bundesland"] = next_data.get("region") or vendor["Bundesland"]
             vendor["Telephone Number"] = next_data.get("Telephone Number") or vendor["Telephone Number"]
             vendor["2. Telephone Number"] = next_data.get("2. Telephone Number") or vendor["2. Telephone Number"]
             vendor["MobilTelefon"] = next_data.get("MobilTelefon") or vendor["MobilTelefon"]
@@ -110,6 +163,8 @@ class VendorScraper:
             vendor["Standort"] = json_ld.get("street") or vendor["Standort"]
             vendor["PLZ"] = json_ld.get("plz") or vendor["PLZ"]
             vendor["Städte"] = json_ld.get("city") or vendor["Städte"]
+            vendor["Bundesland"] = json_ld.get("region") or vendor["Bundesland"]
+            vendor["Land"] = json_ld.get("country") or vendor["Land"]
             if json_ld.get("telephone"):
                 vendor["Telephone Number"] = _format_phone(json_ld["telephone"])
             if json_ld.get("email"):
@@ -118,6 +173,7 @@ class VendorScraper:
         vcount = parse_vendor_vehicle_count(html)
         if vcount is not None:
             vendor["Anzahl der Fahrzeuge"] = vcount
+        _finalize_location_fields(vendor)
 
     @staticmethod
     def _validate_vendor_static(result: FetchResult) -> StaticValidation:
@@ -126,6 +182,7 @@ class VendorScraper:
             "Standort": "",
             "PLZ": "",
             "Städte": "",
+            "Bundesland": "",
             "Land": "Deutschland",
             "Telephone Number": "",
             "2. Telephone Number": "",
@@ -273,6 +330,7 @@ class VendorScraper:
         # Extract PLZ and city from "DE-XXXXX City" pattern
         m = re.search(r"DE-(\d{5})\s+(\w[\w\s]*?)(?=\s*(?:Kontakt|Wir|Bei|$))", full_text)
         if m:
+            vendor["Land"] = vendor.get("Land") or "Deutschland"
             if not vendor["PLZ"]:
                 vendor["PLZ"] = m.group(1)
             if not vendor["Städte"]:
@@ -313,6 +371,57 @@ class VendorScraper:
 
         except Exception as e:
             logger.debug("Could not extract Impressum: %s", e)
+
+
+def _normalize_country_name(country: Any) -> str:
+    text = clean_text(country)
+    normalized = text.upper()
+    if normalized in {"DE", "DEU", "GERMANY", "DEUTSCHLAND"}:
+        return "Deutschland"
+    if normalized in {"IT", "ITA", "ITALY", "ITALIA", "ITALIEN"}:
+        return "Italien"
+    if normalized in {"FR", "FRA", "FRANCE", "FRANKREICH"}:
+        return "Frankreich"
+    if normalized in {"NL", "NLD", "NETHERLANDS", "NIEDERLANDE"}:
+        return "Niederlande"
+    if normalized in {"BE", "BEL", "BELGIUM", "BELGIEN"}:
+        return "Belgien"
+    if normalized in {"AT", "AUT", "AUSTRIA", "ÖSTERREICH", "OESTERREICH"}:
+        return "Österreich"
+    return text
+
+
+def _actual_region_for_vendor(country: Any, plz: Any, region: Any) -> str:
+    country_name = _normalize_country_name(country)
+    region_text = clean_text(region)
+    if _is_germany(country_name):
+        return _german_state_from_postcode(plz) or region_text
+    return region_text
+
+
+def _finalize_location_fields(vendor: dict[str, Any]) -> None:
+    country = _normalize_country_name(vendor.get("Land", ""))
+    region = clean_text(vendor.get("Bundesland", ""))
+    if _is_germany(country):
+        vendor["Bundesland"] = _german_state_from_postcode(vendor.get("PLZ", "")) or region
+    else:
+        vendor["Bundesland"] = "" if region in GERMAN_STATE_NAMES else region
+    vendor["Land"] = country
+
+
+def _is_germany(country: str) -> bool:
+    return _normalize_country_name(country) == "Deutschland"
+
+
+def _german_state_from_postcode(plz: Any) -> str:
+    match = re.search(r"\b(\d{5})\b", clean_text(plz))
+    if not match:
+        return ""
+    value = int(match.group(1))
+    for postcode_range, state in GERMAN_POSTCODE_STATE_RANGES:
+        if value in postcode_range:
+            return state
+    return ""
 
 
 def _format_phone(phone: str) -> str:

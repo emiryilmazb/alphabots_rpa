@@ -25,6 +25,11 @@ class FetchResult:
     html_dump_path: str = ""
     fetched_at: str = ""
     fallback_reason: str = ""
+    classification: str = ""
+    detail_status: str = ""
+    failure_reason: str = ""
+    visible_text_path: str = ""
+    extracted_fields_path: str = ""
 
     def __post_init__(self) -> None:
         if not self.final_url:

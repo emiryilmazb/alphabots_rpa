@@ -23,6 +23,8 @@ class RegionalScraper:
         self.browser = browser
         self.config = config
         self.fetch_manager = FetchStrategyManager(config, browser)
+        self.last_discovered_count = 0
+        self.last_enqueued_count = 0
 
     async def collect_dealer_entries(
         self,
@@ -37,11 +39,18 @@ class RegionalScraper:
         """
         all_dealers: list[dict[str, str]] = []
         seen_urls: set[str] = set()
+        discovered_urls: set[str] = set()
         page_num = 0
+        self.last_discovered_count = 0
+        self.last_enqueued_count = 0
+        consecutive_empty_pages = 0
+        consecutive_fallback_failures = 0
+        MAX_CONSECUTIVE_EMPTY = 3
+        MAX_CONSECUTIVE_FALLBACKS = 3
 
         while True:
             # Check page limit
-            if self.config.max_pages_per_state > 0 and page_num >= self.config.max_pages_per_state:
+            if (self.config.max_pages_per_state > 0 and page_num >= self.config.max_pages_per_state) or (getattr(self.config, "max_regional_pages", 0) > 0 and page_num >= getattr(self.config, "max_regional_pages", 0)):
                 logger.info("Page limit reached (%d pages).", self.config.max_pages_per_state)
                 break
 
@@ -58,6 +67,10 @@ class RegionalScraper:
                 break
 
             if result.strategy.startswith("playwright"):
+                consecutive_fallback_failures += 1
+                if consecutive_fallback_failures >= MAX_CONSECUTIVE_FALLBACKS:
+                    logger.warning("Reached %d consecutive Playwright fallbacks. Stopping runaway pagination.", consecutive_fallback_failures)
+                    break
                 # Wait briefly for either rendered dealer links or the empty page state.
                 try:
                     await self.browser.page.wait_for_load_state("networkidle", timeout=10000)
@@ -65,42 +78,54 @@ class RegionalScraper:
                     logger.debug("Network idle wait timed out on regional page %d.", page_num)
                 html = await self.browser.get_page_html()
             else:
+                consecutive_fallback_failures = 0
                 html = result.html
 
             dealers = parse_regional_page(html)
-
-            if not dealers:
-                logger.info("No dealers found on page %d. End of pagination.", page_num)
-                break
 
             # Deduplicate
             new_count = 0
             for d in dealers:
                 d["url"] = normalize_dealer_url(d.get("url", ""))
-                if d["url"] and d["url"] not in seen_urls:
+                if not d["url"]:
+                    continue
+                if d["url"] not in discovered_urls:
+                    discovered_urls.add(d["url"])
+                    self.last_discovered_count = len(discovered_urls)
+                if d["url"] not in seen_urls:
                     seen_urls.add(d["url"])
-                    all_dealers.append(d)
+                    limited_dealer = dict(d)
+                    all_dealers.append(limited_dealer)
                     if on_dealer is not None:
-                        await on_dealer(dict(d))
+                        await on_dealer(dict(limited_dealer))
+                    self.last_enqueued_count = len(all_dealers)
                     new_count += 1
 
             logger.info("Page %d: found %d dealers (%d new, %d total)",
                         page_num, len(dealers), new_count, len(all_dealers))
 
             if new_count == 0:
-                logger.info("No new dealers on page %d. Stopping.", page_num)
-                break
-
-            # Check vendor limit
-            if self.config.max_vendors > 0 and len(all_dealers) >= self.config.max_vendors:
-                all_dealers = all_dealers[:self.config.max_vendors]
-                logger.info("Vendor limit reached (%d vendors).", self.config.max_vendors)
-                break
+                consecutive_empty_pages += 1
+                logger.info("Page %d yielded no new dealers. (Consecutive: %d)", page_num, consecutive_empty_pages)
+                if consecutive_empty_pages >= MAX_CONSECUTIVE_EMPTY:
+                    logger.info("Reached %d consecutive empty/no-new-dealer pages. Stopping.", consecutive_empty_pages)
+                    break
+            else:
+                consecutive_empty_pages = 0
 
             page_num += 1
             await self.browser.polite_delay()
 
-        logger.info("Regional scraping complete: %d unique dealers collected.", len(all_dealers))
+
+        if self.config.max_vendors > 0 and len(all_dealers) > self.config.max_vendors:
+            logger.info("Applying max-vendors limit: reducing from %d to %d", len(all_dealers), self.config.max_vendors)
+            all_dealers = all_dealers[:self.config.max_vendors]
+
+        logger.info(
+            "Regional scraping complete: %d unique dealers discovered; %d selected for processing.",
+            self.last_discovered_count,
+            len(all_dealers),
+        )
         return all_dealers
 
     @staticmethod

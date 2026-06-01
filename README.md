@@ -1,130 +1,118 @@
 # Mobile.de NRW Scraper
 
-Professional Python RPA/web-scraping solution for the Alphabots GmbH developer task.
-The default scope is the public mobile.de regional directory for Nordrhein-Westfalen:
+Python RPA/web-scraping solution for the Alphabots GmbH developer task. The default target is the public mobile.de regional dealer directory for Nordrhein-Westfalen:
 
 ```text
 https://home.mobile.de/regional/nordrhein-westfalen/0.html
 ```
 
-Schema completeness is guaranteed; source completeness is measured. All required
-output columns are created consistently, unavailable source values are left empty,
-and coverage/error sheets explain what was actually available in the source pages.
+The scraper collects dealer data, vehicle listing data, financing data where exposed by mobile.de, classifications, dashboard tables, an Excel workbook, and a Word report. Technical/detail fields are complete only when detail pages are successfully reached. Financing fields are extracted where available from the source. Schema completeness is guaranteed; source completeness is measured. Required output columns are always created, unavailable source values are left empty, and coverage/error sheets explain what was available in the source pages.
 
-## Features
+## Project Overview
 
-- Local, strict headless, Firefox/Chrome, Docker, and Docker/Xvfb execution paths.
-- Playwright browser automation for rendered pages, consent controls, contact sections, and dynamic dealer inventory pages.
-- `curl_cffi` fast static fetcher where safe, with Playwright fallback for dynamic pages.
-- Legacy sequential mode plus SQLite-backed producer-consumer pipeline mode.
-- Bounded vendor and vehicle detail concurrency; no shared Playwright page across concurrent workers.
-- Stable Händler IDs in `C0000001` format, persisted across SQLite resume runs.
-- Batched checkpoints/state storage; full CSV/JSON exports happen at the end, not after every vehicle.
-- Debug HTML and screenshots when enabled.
-- Required Excel workbook and Word report with run summary, data coverage, errors, classification, and dashboard findings.
+- Uses `curl_cffi` for static fetches where reliable and Playwright for rendered pages.
+- Supports local headed execution, Docker/Xvfb server execution, and strict headless mode as a technical option.
+- Uses a SQLite-backed producer-consumer pipeline for bounded vendor and vehicle work.
+- Traverses dealer inventory categories and enforces vendor/car caps for controlled benchmarks.
+- Extracts rich listing-card data from mobile.de Next.js payloads, including many financing fields from listing payloads.
+- Offers an optional `uc-popup` detail enrichment strategy for small, controlled runs that need fields only visible on real mobile.de detail pages.
+- Generates raw exports, processed exports, Excel dashboard workbook, Word methodology/report document, and structured error records.
 
-## Architecture
+Strict headless is technically supported but currently blocked by mobile.de in this environment. Docker/Xvfb is the recommended server-compatible execution mode.
 
-```text
-Regional discovery
-  -> vendor jobs / vendors table
-  -> vendor workers collect dealer info and listing cards
-  -> vehicle jobs
-  -> bounded vehicle detail workers
-  -> single SQLite writer
-  -> final raw CSV/JSON, processed CSV/JSON, Excel, Word
-```
+## Setup
 
-Key modules:
+Windows/local setup:
 
-- `src/config.py`: CLI/env configuration.
-- `src/scraper/browser.py`: hardened Playwright lifecycle, browser modes, debug artifacts.
-- `src/scraper/fetchers/`: `FetchResult`, curl fetcher, Playwright fetcher, strategy manager.
-- `src/scraper/state_store.py`: SQLite run, vendor, vehicle job, vehicle, and error state.
-- `src/scraper/pipeline.py`: bounded producer-consumer pipeline.
-- `src/processing/`: cleaning, classification, dashboard scoring.
-- `src/output/`: Excel workbook and Word report generation.
-
-## Installation
-
-```bash
+```powershell
 python -m venv venv
 venv\Scripts\activate
 python -m pip install -r requirements.txt
 python -m playwright install
 ```
 
-On Linux without Docker:
+Linux without Docker:
 
 ```bash
+python -m pip install -r requirements.txt
 python -m playwright install-deps
 python -m playwright install
 ```
 
-## Local Runs
+Docker setup:
 
-Small smoke run:
-
-```bash
-python -m src.main --state nordrhein-westfalen --max-vendors 2 --max-cars-per-vendor 3
+```powershell
+docker compose build scraper
 ```
 
-Strict headless:
+## Recommended Commands
 
-```bash
-python -m src.main --state nordrhein-westfalen --browser-mode headless --max-vendors 10
+Production/server command for the deployable Docker/Xvfb path:
+
+```powershell
+venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 0 --max-cars-per-vendor 0 --max-pages 100 --shard-count 1 --clean --uc-wait-profile adaptive --uc-block-resources false
 ```
 
-Firefox headless:
+This is an explicit production profile, not a change to the CLI defaults. Docker/Xvfb remains the deployable architecture for EC2/ECS-style execution. One shard is safest while the live source is blocking detail pages; two shards can be used if the source remains stable. Four shards are intended for controlled validation or benchmarking, not for a high-detail final run when blocking is active.
 
-```bash
-python -m src.main --state nordrhein-westfalen --browser firefox --browser-mode headless --max-vendors 10
+Conservative capped validation command:
+
+```powershell
+venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 25 --max-cars-per-vendor 10 --max-pages 40 --shard-count 4 --clean --uc-wait-profile safe --uc-block-resources true
 ```
 
-Visible local browser:
+Adaptive capped validation example:
 
-```bash
-python -m src.main --state nordrhein-westfalen --browser-mode headed --max-vendors 10
+```powershell
+venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 25 --max-cars-per-vendor 10 --max-pages 40 --shard-count 4 --clean --uc-wait-profile adaptive --uc-block-resources true
 ```
 
-SQLite producer-consumer pipeline:
+Adaptive wait must be selected explicitly with `--uc-wait-profile adaptive`; it is not an implicit local Chrome/CDP dependency.
 
-```bash
-python -m src.main --state nordrhein-westfalen --pipeline-mode sqlite --vendor-concurrency 2 --vehicle-detail-concurrency 3 --max-vendors 10
+## Execution Modes
+
+Local headed mode is useful for development and manual validation. It opens a visible Playwright browser and has been used for capped benchmark validation.
+
+Docker/Xvfb mode is the recommended server-compatible mode. It runs a headed browser under a virtual framebuffer and avoids strict-headless site behavior while still running in Docker/server environments.
+
+Strict headless mode remains available via `--browser-mode headless`, but it is not the recommended production path for this target because mobile.de currently blocks strict headless in this environment.
+
+## UC Popup Detail Strategy
+
+`--detail-open-strategy uc-popup` is an optional enrichment strategy for fields that are often missing from listing payloads: CO₂-Emissionen, Baureihe, Ausstattungslinie, Anzahl der Fahrzeughalter, Hubraum, Türen, Schadstoffklasse, Farbe, and Sitzplätze. It is intended for small missing-detail runs, not broad benchmarks.
+
+The default stable pipeline remains listing-first. UC popup is only used when `--detail-open-strategy uc-popup` is explicitly passed. It requires:
+
+- `undetected_chromedriver`
+- `selenium`
+- `setuptools` on Python 3.12 runtimes because the current UC package imports `distutils`
+- a local Google Chrome installation
+
+The strategy opens the current vendor/category page, collects live mobile.de detail links from the rendered page or listing payload, matches the current vehicle by URL or vehicle id, opens the matched detail in a new tab, switches to the new tab, classifies the resulting page, and only merges detail values into empty listing fields. Existing listing values are not overwritten. If the live link is stale, unavailable, redirects home, opens an error page, or the popup cannot be captured, the scraper records the reason and keeps the listing fallback row.
+
+Run UC popup with `--vehicle-detail-concurrency 1`. The output metrics include `detail_open_strategy`, `popup_opened_count`, `popup_captured_count`, `popup_capture_failed_count`, `wrong_tab_capture_count`, `real_detail_page_loaded_count`, `detail_home_redirect_count`, `detail_error_page_count`, `stale_redirect_count`, `uc_popup_success_count`, `uc_popup_failed_count`, and `detail_target_fields_extracted_count`.
+
+## Host Chrome CDP Detail Strategy
+
+`--detail-open-strategy host-chrome-cdp` is an emergency, opt-in detail strategy for local runs where the user's normal Chrome session can load mobile.de detail pages but automated browser launches are blocked. It connects to an already-running Chrome remote debugging endpoint and reads rendered detail HTML from that host browser session. It is never used by default.
+
+Start a separate Chrome profile first:
+
+```powershell
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\mobilede_detail_profile"
 ```
 
-Clean run:
+Then run with `--detail-open-strategy host-chrome-cdp --chrome-cdp-url http://127.0.0.1:9222` and `--vehicle-detail-concurrency 1`. If the CDP endpoint is unavailable, or if the page classifies as a block/CAPTCHA/login challenge, the run records the failure and keeps listing fallback data. The strategy does not solve CAPTCHA and closes only tabs it creates.
 
-```bash
-python -m src.main --state nordrhein-westfalen --clean-run true
+CDP is not required for server deployment. It is an optional local recovery path when a normal user browser can access pages that automated browser contexts cannot.
+
+Retryable local enrichment can be run after a normal scrape:
+
+```powershell
+venv\Scripts\python.exe tools\enrich_vehicle_details.py --input-cars <cars_raw.json> --output-cars <cars_enriched.json> --cache-dir data\detail_cache\host_cdp_enrichment --methods cache,listing,host-chrome-cdp,manual-html --chrome-cdp-url http://127.0.0.1:9222 --max-vehicles 25 --sleep-seconds 12 --sleep-jitter-seconds 8 --stop-after-blocks 5 --max-block-rate 0.4 --resume true --retry-only-missing true
 ```
 
-## Docker / Cloud
-
-The Docker image version is tied to the Playwright package version in `requirements.txt`.
-
-Strict headless Docker:
-
-```bash
-docker compose up --build
-```
-
-Docker with Xvfb fallback:
-
-```bash
-BROWSER_MODE=xvfb HEADLESS=false docker compose up --build
-```
-
-Linux Xvfb without Docker:
-
-```bash
-xvfb-run -a python -m src.main --state nordrhein-westfalen --browser-mode xvfb --max-vendors 10
-```
-
-Strict headless is supported where the website serves the page normally. If a page is
-unavailable or returns access denied, the run records the failure reason and continues
-with measurable coverage where possible. Docker/Xvfb is the recommended server fallback
-when strict headless rendering is unreliable.
+The enrichment tool uses cached parsed detail fields before any live request, records failed IDs for later retry, disables live methods when blocking thresholds are hit, and only fills empty fields with values extracted from source HTML.
 
 ## CLI Options
 
@@ -132,51 +120,66 @@ when strict headless rendering is unreliable.
 |---|---:|---|
 | `--state` | `nordrhein-westfalen` | German state slug |
 | `--start-url` | empty | Optional regional URL/template; `{page}` is supported |
-| `--max-vendors` | `0` | Vendor limit, 0 means unlimited |
-| `--max-cars-per-vendor` | `0` | Vehicle limit per vendor, 0 means unlimited |
-| `--max-vehicles-per-vendor` | empty | Alias for `--max-cars-per-vendor` |
-| `--max-pages` | `0` | Regional page limit |
+| `--pipeline-mode` | `sqlite` | Use `sqlite` for final/capped runs |
 | `--browser` | `chromium` | `chromium`, `chrome`, or `firefox` |
 | `--browser-mode` | `headed` | `headless`, `headed`, or `xvfb` |
-| `--headless` | empty | Backward-compatible shortcut |
 | `--fetch-strategy` | `auto` | `auto`, `curl`, or `playwright` |
 | `--detail-policy` | `missing-required` | `always`, `missing-required`, `financing-only`, or `never` |
-| `--pipeline-mode` | `legacy` | `legacy` or SQLite `sqlite` |
-| `--regional-concurrency` | `1` | Regional producer setting |
-| `--vendor-concurrency` | `1` | SQLite vendor workers |
-| `--vehicle-listing-concurrency` | `1` | Listing traversal setting |
-| `--vehicle-detail-concurrency` | `1` | SQLite vehicle detail workers |
-| `--curl-concurrency` | `4` | curl fetch concurrency |
-| `--playwright-concurrency` | `3` | Playwright fetch concurrency setting |
-| `--checkpoint-every` | `50` | Legacy JSON checkpoint batch size |
-| `--flush-every` | `100` | Durable writer batch setting |
-| `--resume` | `true` | Resume checkpoints/state |
+| `--detail-open-strategy` | `auto` | `auto`, `listing-only`, `playwright-direct`, `playwright-click`, `uc-popup`, or `host-chrome-cdp`; legacy aliases are accepted |
+| `--chrome-cdp-url` | `http://127.0.0.1:9222` | Existing host Chrome CDP endpoint for `host-chrome-cdp` |
+| `--source-audit` | `false` | Save tiny-sample raw source artifacts, network logs, and detail strategy matrix evidence |
+| `--source-audit-only` | `false` | Run only source audit/matrix and skip normal exports |
+| `--source-audit-max-vendors` | `2` | Max vendors inspected by source audit |
+| `--source-audit-max-vehicles` | `5` | Max vehicle detail URLs tested by source audit |
+| `--max-vendors` | `0` | Vendor cap; `0` means uncapped |
+| `--max-cars-per-vendor` | `0` | Vehicle cap per vendor; `0` means uncapped |
+| `--vendor-concurrency` | `1` | Vendor worker count |
+| `--vehicle-detail-concurrency` | `1` | Detail worker count |
+| `--detail-max-retries` | `1` | Detail-page retry count |
+| `--benchmark` | `false` | Write benchmark summary |
 | `--clean-run` | `false` | Clear checkpoints/state and disable resume |
-| `--force-resume` | `false` | Allow SQLite resume after config hash mismatch |
-| `--output-dir` | `data/output` | Final output directory |
-| `--debug` | `false` | Enable debug behavior |
-| `--save-debug-artifacts` | `false` | Save failure HTML/screenshots |
-| `--user-data-dir` | empty | Optional persistent Playwright profile directory |
-| `--storage-state` | empty | Optional Playwright storage state JSON |
-| `--min-delay` / `--max-delay` | `2.0` / `5.0` | Polite delay range |
-| `--max-retries` | `3` | Navigation/fetch retry count |
+| `--output-dir` | empty | Optional output directory override |
 
 ## Output Files
 
+When existing root data/state files are present and `--overwrite` is not used, the run writes to a new folder:
+
 ```text
-data/raw/vendors_raw.csv
-data/raw/vendors_raw.json
-data/raw/cars_raw.csv
-data/raw/cars_raw.json
-data/processed/cars_processed.csv
-data/processed/cars_processed.json
-data/output/errors.csv
-data/output/errors.json
-data/output/mobile_de_nrw_dashboard.xlsx
-data/output/mobile_de_nrw_report.docx
+data/runs/<run_id>/
 ```
 
-Excel sheets include:
+Key files:
+
+```text
+data/runs/<run_id>/raw/vendors_raw.csv
+data/runs/<run_id>/raw/vendors_raw.json
+data/runs/<run_id>/raw/cars_raw.csv
+data/runs/<run_id>/raw/cars_raw.json
+data/runs/<run_id>/processed/cars_processed.csv
+data/runs/<run_id>/processed/cars_processed.json
+data/runs/<run_id>/output/mobile_de_nrw_dashboard.xlsx
+data/runs/<run_id>/output/mobile_de_nrw_report.docx
+data/runs/<run_id>/output/errors.csv
+data/runs/<run_id>/output/errors.json
+data/runs/<run_id>/output/benchmark_summary.json
+data/runs/<run_id>/source_audit/source_audit_summary.json
+data/runs/<run_id>/source_audit/detail_strategy_matrix.json
+```
+
+Root `data/raw`, `data/state`, and `data/output` are not overwritten during guarded run-folder execution.
+
+Validated final submission artifacts are kept under:
+
+```text
+data/final_submission_output/mobile_de_nrw_dashboard.xlsx
+data/final_submission_output/mobile_de_nrw_report.docx
+```
+
+## Excel Workbook
+
+The Excel workbook contains the required raw, processed, summary, coverage, error, compliance, and dashboard outputs.
+
+Expected sheets:
 
 - `Vendors`
 - `Vehicles`
@@ -185,8 +188,8 @@ Excel sheets include:
 - `Cars_Processed`
 - `Run_Summary`
 - `Data_Coverage`
+- `Requirements_Compliance`
 - `Errors`
-- `Dashboard`
 - `Vendor_Summary`
 - `Manufacturer_Summary`
 - `Category_Summary`
@@ -196,23 +199,66 @@ Excel sheets include:
 - `Classification_Summary`
 - `Category_By_Manufacturer`
 - `Origin_Summary`
+- `Dashboard`
 
-## Required Schema
+## Word Report
 
-Vendor output always includes the required task columns: `Händler ID`,
-`Händlername`, `Standort`, `PLZ`, `Städte`, `Bundesland`, `Land`, phone/fax/email
-fields, `Hauptseite`, `Mobile.de_Links`, and `Anzahl der Fahrzeuge`.
+The Word report documents:
 
-Vehicle output always includes the required task columns: dealer identifiers,
-make/model/type/status/registration/mileage/fuel/CO2/price/power/seats/gearbox,
-emissions class, color, series, trim, displacement, doors, owners, `Finanzierung`,
-`Financing`, bank/intermediary, financing amounts/rates, duration, and traceability
-columns such as `source_vendor_url`, `source_vehicle_url`, `fetch_strategy`,
-`fetch_status`, `parse_status`, `vehicle_data_source`, `scraped_at`, and `run_id`.
+- extraction methodology
+- Docker/Xvfb server-compatible execution
+- strict headless limitation
+- detail-page/source limitation
+- source audit and detail strategy matrix results when `--source-audit` is used
+- classification methodology
+- dashboard findings
+- run summary
+- known limitations
 
-## Classification Rules
+It includes the exact statement:
 
-Vehicle categories are exactly:
+```text
+Technical/detail fields are complete only when detail pages are successfully reached. Financing fields are extracted where available from the source. Schema completeness is guaranteed; source completeness is measured.
+```
+
+## Data_Coverage
+
+`Data_Coverage` reports per-field non-empty counts, total row counts, and coverage percentages. It is the primary measurement of source completeness for each vendor and vehicle field. Missing values are not guessed or fabricated.
+
+## Requirements_Compliance
+
+`Requirements_Compliance` reports one row per required task field with:
+
+- `field_name`
+- `dataset`
+- `required_by_task`
+- `final_excel_column_exists`
+- `extractor_exists`
+- `current_source`
+- `current_coverage_pct`
+- `sample_present_value`
+- `missing_count`
+- `risk_level`
+- `status`
+- `notes`
+
+Status values:
+
+- `satisfied`: column/extractor exist and coverage is at least 85%
+- `partially_satisfied`: column/extractor exist and coverage is 50-84%
+- `weak`: column/extractor exist and coverage is 1-49%
+- `schema_only`: column/extractor exist but current coverage is 0%
+- `missing`: required column or extractor is absent
+
+## Source Audit
+
+`--source-audit` is a bounded evidence mode for the detail-dependent fields. It saves returned public source artifacts under `data/runs/<run_id>/source_audit/`, including vendor/category HTML, Next.js payloads, listing-card payloads, visible card text, detail attempt HTML/screenshots/headers, network response indexes, discovered API endpoints, and a detail strategy matrix.
+
+The matrix tests direct URL, persistent context, same-context, category navigation, listing click, modifier click, delayed click, warmup click, and small browser-channel variations on a tiny sample. A strategy is only counted as useful when it extracts real source values for the target fields; filter labels or search facets are rejected.
+
+## Classification
+
+Vehicle categories are mapped to:
 
 - `PKW`
 - `Motorrad`
@@ -220,11 +266,7 @@ Vehicle categories are exactly:
 - `LKW`
 - `Andere`
 
-Classification metadata columns include `raw_vehicle_type`,
-`normalized_vehicle_type`, `vehicle_category`,
-`vehicle_category_confidence`, and `vehicle_category_rule`.
-
-Manufacturer origins are exactly:
+Manufacturer origins are mapped to:
 
 - `Deutschland`
 - `Italien`
@@ -233,33 +275,54 @@ Manufacturer origins are exactly:
 - `Frankreich`
 - `Andere`
 
-Manufacturer grouping follows the task-defined categories, not historical/legal
-corporate-origin definitions. For example, Ford and Volvo are assigned to
-Deutschland because they are listed under Deutschland in the assignment.
+The final classification uses the task-defined values. Literal `Unknown`/`Other` should not appear in final classification columns.
 
-## Dashboard Methodology
+## Known Limitations
 
-The dashboard reports top/least vendors, best/worst deal candidates, efficient
-vehicles, manufacturer summaries, origin summaries, and top category/manufacturer
-combinations. Ranking is heuristic and explainable: score columns expose price,
-mileage, age, CO2, performance/price-per-kW, confidence, and the number of fields
-available. Missing values are not fabricated; rows with too little information are
-excluded from ranked tables or receive lower confidence.
+Some vehicle detail fields such as CO₂-Emissionen, Baureihe, Ausstattungslinie, and Anzahl der Fahrzeughalter can still show low source coverage because mobile.de does not expose them in every listing payload and detail access can fail. These values are not guessed and are reported transparently in Data_Coverage and Requirements_Compliance.
 
-## Limitations
+Targeted source audit found that some listing payloads expose previous-owner count as `attr.pvo`; the parser maps this real source value to `Anzahl der Fahrzeughalter`. The optional UC popup strategy can increase measured coverage for CO₂-Emissionen, Baureihe, and Ausstattungslinie when mobile.de returns a real detail page for a live listing.
 
-The scraper uses responsible browser automation and does not require authentication
-or private endpoints. If a page is unavailable, the run records the failure reason
-and continues with measurable coverage where possible. Financing, email, phone, and
-detail-page technical fields only appear when the public source exposes them.
+UC popup and host Chrome CDP are slower than listing extraction and should be run with detail concurrency 1. If the UC dependency stack is unavailable, the run records `uc_dependency_missing` with the message `uc-popup strategy requires undetected_chromedriver and local Chrome.` and preserves listing fallback output. If host Chrome CDP is unavailable, the run records `host_chrome_cdp_failed` / `host_chrome_cdp_*` metrics and preserves listing fallback output.
 
-For production-grade contractual data access, an authorized API/data partnership
-would be preferable. This assignment focuses on publicly visible website extraction
-as requested.
+Financing fields are populated only when mobile.de exposes a financing offer in the listing payload or detail source. Dealer homepage, second phone, mobile phone, and fax fields can be sparse because not every dealer publishes those values.
+
+No fake values are inserted. `Andere` is the approved fallback for task-defined classification values that do not map to Deutschland, Italien, Korea, Japan, Frankreich, PKW, Motorrad, Freizeitfahrzeuge, or LKW.
+
+Regional search state and actual vendor location are kept separate:
+
+- `Bundesland`: actual vendor state/region when available or derivable from a German PLZ
+- `Land`: actual vendor country
+- `search_state`: searched/assigned state, such as `Nordrhein-Westfalen`
+
+The project is not 1:1 source-complete because mobile.de does not expose every requested value in every accessible source and detail pages may be blocked. The deliverable is complete structurally and reports measured source limitations.
+
+## Final Validation Checklist
+
+- `pytest` passed
+- Docker build passed
+- Docker/Xvfb smoke passed
+- Excel generated
+- Word generated
+- `Requirements_Compliance` present
+- `Data_Coverage` present
+- source audit evidence present when `--source-audit` is used
+- `Errors` present
+- No literal `Unknown`/`Other` in final classifications
+- Detail limitations documented
 
 ## Tests
 
-```bash
-python -m pytest -q
+Validate the final workbook:
+
+```powershell
+venv\Scripts\python.exe tools\validate_dashboard.py data\final_submission_output\mobile_de_nrw_dashboard.xlsx --min-vendors 25 --min-vehicles 180
 ```
 
+Run the local test suite:
+
+```powershell
+venv\Scripts\python.exe -m compileall src tests tools
+venv\Scripts\python.exe -m pytest tests/ -v --tb=short
+venv\Scripts\python.exe -m pip check
+```

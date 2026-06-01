@@ -15,7 +15,14 @@ from typing import Any
 import pandas as pd
 
 from src.config import ScraperConfig, parse_args
-from src.models import VEHICLE_COLUMNS, VENDOR_COLUMNS
+from src.models import (
+    CLASSIFICATION_REQUIRED_FIELDS,
+    FINANCING_REQUIRED_FIELDS,
+    VEHICLE_BASIC_FIELDS,
+    VEHICLE_COLUMNS,
+    VEHICLE_TECHNICAL_FIELDS,
+    VENDOR_COLUMNS,
+)
 from src.output.excel_writer import generate_excel
 from src.output.word_report import generate_word_report
 from src.processing.classification import classify_dataframe
@@ -72,7 +79,22 @@ async def run_pipeline(config: ScraperConfig) -> None:
     vendors: list[dict[str, Any]] = []
     all_cars: list[dict[str, Any]] = []
 
-    if config.pipeline_mode == "sqlite":
+
+    if not config.overwrite and "runs" in str(config.data_dir):
+        logger.warning("OVERWRITE GUARD: Existing files >50KB detected. Using run folder: %s", config.data_dir)
+    if config.process_existing:
+        logger.info("=" * 60)
+        logger.info("TASK 1: REPROCESSING EXISTING DATA (Skipping scrape)")
+        logger.info("=" * 60)
+        v_file = (config.input_dir_override or config.raw_dir) / "vendors_raw.json"
+        c_file = (config.input_dir_override or config.raw_dir) / "cars_raw.json"
+        if v_file.exists():
+            with open(v_file, "r", encoding="utf-8") as f:
+                vendors = json.load(f)
+        if c_file.exists():
+            with open(c_file, "r", encoding="utf-8") as f:
+                all_cars = json.load(f)
+    elif config.pipeline_mode == "sqlite":
         try:
             logger.info("=" * 60)
             logger.info("TASK 1: DATA EXTRACTION (sqlite producer-consumer pipeline)")
@@ -87,6 +109,9 @@ async def run_pipeline(config: ScraperConfig) -> None:
             result = await run_concurrent_pipeline(config, run_id=run_id, bundesland=bundesland)
             vendors = result.vendors
             all_cars = result.vehicles
+            config.regional_discovered_count = result.discovered_vendor_count
+            config.enqueued_vendor_count = result.enqueued_vendor_count
+            config.processed_vendor_count = result.processed_vendor_count
             errors.extend(_normalize_pipeline_errors(result.errors))
         except Exception as exc:
             logger.exception("SQLite pipeline scraping phase failed: %s", exc)
@@ -110,8 +135,9 @@ async def run_pipeline(config: ScraperConfig) -> None:
         )
 
     # Write raw files once at the end (not after every record).
-    _save_records(vendors, config.raw_dir / "vendors_raw", VENDOR_COLUMNS)
-    _save_records(all_cars, config.raw_dir / "cars_raw", VEHICLE_COLUMNS)
+    if getattr(config, "process_existing", False) is False:
+        _save_records(vendors, config.raw_dir / "vendors_raw", VENDOR_COLUMNS)
+        _save_records(all_cars, config.raw_dir / "cars_raw", VEHICLE_COLUMNS)
 
     logger.info("=" * 60)
     logger.info("TASK 2: DATA PREPROCESSING")
@@ -149,27 +175,37 @@ async def run_pipeline(config: ScraperConfig) -> None:
     vehicle_coverage = _compute_field_coverage(df_cars_classified, list(df_cars_classified.columns))
 
     dashboard = prepare_dashboard(df_vendors_clean, df_cars_classified)
-    generate_excel(
-        config.excel_path, df_vendors_clean, df_cars_raw, df_cars_classified,
-        dashboard, run_summary=run_summary,
-        vendor_coverage=vendor_coverage, vehicle_coverage=vehicle_coverage,
-        errors=errors,
-    )
-    generate_word_report(
-        config.word_path, df_vendors_clean, df_cars_classified, dashboard,
-        config.state, errors, run_summary=run_summary,
-        vendor_coverage=vendor_coverage, vehicle_coverage=vehicle_coverage,
-    )
-    _save_errors(errors, config.output_dir)
+    output_guard_key = "_outputs_generated_for_run_id"
+    outputs_generated = False
+    if getattr(config, output_guard_key, "") == run_id:
+        logger.warning("Output generation already completed for run_id=%s; skipping duplicate generation.", run_id)
+    else:
+        setattr(config, output_guard_key, run_id)
+        outputs_generated = True
+        generate_excel(
+            config.excel_path, df_vendors_clean, df_cars_raw, df_cars_classified,
+            dashboard, run_summary=run_summary,
+            vendor_coverage=vendor_coverage, vehicle_coverage=vehicle_coverage,
+            errors=errors,
+        )
+        generate_word_report(
+            config.word_path, df_vendors_clean, df_cars_classified, dashboard,
+            config.state, errors, run_summary=run_summary,
+            vendor_coverage=vendor_coverage, vehicle_coverage=vehicle_coverage,
+        )
+        _save_errors(errors, config.output_dir)
 
-    logger.info("=" * 60)
-    logger.info("PIPELINE COMPLETE (run_id=%s)", run_id)
-    logger.info("  Vendors scraped: %d", len(df_vendors_clean))
-    logger.info("  Vehicles scraped: %d", len(df_cars_raw))
-    logger.info("  Errors: %d", len(errors))
-    logger.info("  Excel: %s", config.excel_path)
-    logger.info("  Word:  %s", config.word_path)
-    logger.info("=" * 60)
+    completion_guard_key = "_completion_logged_for_run_id"
+    if outputs_generated and getattr(config, completion_guard_key, "") != run_id:
+        setattr(config, completion_guard_key, run_id)
+        logger.info("=" * 60)
+        logger.info("PIPELINE COMPLETE (run_id=%s)", run_id)
+        logger.info("  Vendors scraped: %d", len(df_vendors_clean))
+        logger.info("  Vehicles scraped: %d", len(df_cars_raw))
+        logger.info("  Errors: %d", len(errors))
+        logger.info("  Excel: %s", config.excel_path)
+        logger.info("  Word:  %s", config.word_path)
+        logger.info("=" * 60)
 
 
 async def _run_legacy_scraping(
@@ -181,7 +217,7 @@ async def _run_legacy_scraping(
     dealers_data: list[dict[str, str]] = []
     vendors: list[dict[str, Any]] = []
     all_cars: list[dict[str, Any]] = []
-    browser = BrowserManager(config)
+    browser = BrowserManager(config, role="legacy")
     try:
         await browser.start()
         logger.info("=" * 60)
@@ -208,7 +244,7 @@ async def _run_legacy_scraping(
             await browser.close()
             config.browser_mode = "headed"
             config.headless = False
-            browser = BrowserManager(config)
+            browser = BrowserManager(config, role="legacy")
             await browser.start()
             dealers_data = await _load_or_collect_dealers(config, checkpoint, browser, errors)
 
@@ -499,6 +535,7 @@ async def _scrape_vehicles(
     if all_cars:
         checkpoint.save("vehicles", _merge_vehicle_checkpoint(loaded_cars, all_cars))
 
+    await vehicle_scraper.close()
     return all_cars
 
 
@@ -711,7 +748,7 @@ def _compute_field_coverage(df: pd.DataFrame, columns: list[str]) -> pd.DataFram
     total = len(df)
     rows: list[dict[str, Any]] = []
     for column in unique_columns:
-        if column in df.columns:
+        if column in df.columns and not df.empty:
             present = df[column].map(_has_value).sum()
         else:
             present = 0
@@ -732,6 +769,50 @@ def _has_value(value: Any) -> bool:
     return str(value).strip() not in {"", "None", "nan", "NaN", "<NA>"}
 
 
+def _coverage_counts_for_fields(df: pd.DataFrame, fields: list[str]) -> tuple[int, int]:
+    if df is None or df.empty or not fields:
+        return 0, 0
+    total = len(df) * len(fields)
+    present = 0
+    for field in fields:
+        if field in df.columns:
+            present += int(df[field].map(_has_value).sum())
+    return present, total
+
+
+def _coverage_pct_for_fields(df: pd.DataFrame, fields: list[str]) -> float:
+    present, total = _coverage_counts_for_fields(df, fields)
+    return round((present / total) * 100, 2) if total else 0.0
+
+
+def _compute_required_coverage_metrics(
+    df_vendors: pd.DataFrame,
+    df_cars_processed: pd.DataFrame,
+) -> dict[str, float]:
+    vendor_present, vendor_total = _coverage_counts_for_fields(df_vendors, VENDOR_COLUMNS)
+    basic_present, basic_total = _coverage_counts_for_fields(df_cars_processed, VEHICLE_BASIC_FIELDS)
+    technical_present, technical_total = _coverage_counts_for_fields(df_cars_processed, VEHICLE_TECHNICAL_FIELDS)
+    financing_present, financing_total = _coverage_counts_for_fields(df_cars_processed, FINANCING_REQUIRED_FIELDS)
+    classification_present, classification_total = _coverage_counts_for_fields(
+        df_cars_processed,
+        CLASSIFICATION_REQUIRED_FIELDS,
+    )
+    final_present = vendor_present + basic_present + technical_present + financing_present + classification_present
+    final_total = vendor_total + basic_total + technical_total + financing_total + classification_total
+    return {
+        "vendor_required_fields_coverage_pct": round((vendor_present / vendor_total) * 100, 2) if vendor_total else 0.0,
+        "vehicle_basic_fields_coverage_pct": round((basic_present / basic_total) * 100, 2) if basic_total else 0.0,
+        "vehicle_technical_fields_coverage_pct": round((technical_present / technical_total) * 100, 2) if technical_total else 0.0,
+        "financing_fields_coverage_pct": round((financing_present / financing_total) * 100, 2) if financing_total else 0.0,
+        "classification_fields_coverage_pct": round((classification_present / classification_total) * 100, 2) if classification_total else 0.0,
+        "final_required_fields_coverage_pct": round((final_present / final_total) * 100, 2) if final_total else 0.0,
+    }
+
+
+def _state_label(state: str) -> str:
+    return BUNDESLAND_MAP.get(state, state.replace("-", " ").title())
+
+
 def _compute_run_summary(
     run_id: str,
     started_at: datetime,
@@ -742,68 +823,138 @@ def _compute_run_summary(
     df_cars_processed: pd.DataFrame,
     errors: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Build basic run metadata for the Excel workbook and Word report."""
     duration = finished_at - started_at
     vendor_error_count = sum(1 for e in errors if str(e.get("stage") or e.get("type", "")).startswith("vendor"))
     vehicle_error_count = sum(1 for e in errors if str(e.get("stage") or e.get("type", "")).startswith("vehicle"))
-    fetch_strategy_counts = (
-        df_cars_processed.get("fetch_strategy", pd.Series(dtype="object"))
-        .replace("", pd.NA)
-        .dropna()
-        .value_counts()
-        .to_dict()
-        if "fetch_strategy" in df_cars_processed.columns
-        else {}
+    mode_str = "process_existing" if getattr(config, "process_existing", False) else "scrape"
+    extracted_count = len(df_cars_processed)
+    avg_sec = duration.total_seconds() / extracted_count if extracted_count > 0 else 0
+    veh_per_hour = (extracted_count / duration.total_seconds()) * 3600 if duration.total_seconds() > 0 else 0
+    est_20k = 20000 / veh_per_hour if veh_per_hour > 0 else 0
+    detail_errors = [
+        error for error in errors
+        if str(error.get("stage") or error.get("type", "")) == "vehicle_detail_fetch_failed"
+    ]
+    detail_fetch_403_count = sum(
+        1
+        for error in detail_errors
+        if str(error.get("status_code", "")) == "403"
+        or "HTTP 403" in str(error.get("error_message") or error.get("error", ""))
     )
-    browser_counts = (
-        pd.Series([e.get("browser", "") for e in errors])
-        .replace("", pd.NA)
-        .dropna()
-        .value_counts()
-        .to_dict()
-        if errors
-        else {}
+    detail_fetch_503_count = sum(
+        1
+        for error in detail_errors
+        if str(error.get("status_code", "")) == "503"
+        or "HTTP 503" in str(error.get("error_message") or error.get("error", ""))
     )
-    vendor_success_rate = round((len(df_vendors) / (len(df_vendors) + vendor_error_count)) * 100, 2) if (len(df_vendors) + vendor_error_count) else 0.0
-    vehicle_success_rate = round((len(df_cars_processed) / (len(df_cars_processed) + vehicle_error_count)) * 100, 2) if (len(df_cars_processed) + vehicle_error_count) else 0.0
-    return {
+    listing_fallback_used_count = 0
+    if "vehicle_data_source" in df_cars_processed.columns:
+        listing_fallback_used_count = int(
+            df_cars_processed["vehicle_data_source"]
+            .astype(str)
+            .isin({"listing_fallback", "listing_payload"})
+            .sum()
+        )
+    coverage_metrics = _compute_required_coverage_metrics(df_vendors, df_cars_processed)
+    detail_site_blocked_or_503_count = int(getattr(config, "detail_site_blocked_or_503_count", 0) or 0)
+    if not detail_site_blocked_or_503_count:
+        detail_site_blocked_or_503_count = sum(
+            1
+            for error in detail_errors
+            if str(error.get("error_type", "")) == "detail_site_blocked_or_503"
+            or str(error.get("status_code", "")) in {"403", "503"}
+            or "HTTP 403" in str(error.get("error_message") or error.get("error", ""))
+            or "HTTP 503" in str(error.get("error_message") or error.get("error", ""))
+        )
+    strict_headless_blocked = any(
+        str(error.get("type") or error.get("stage", "")) == "headless_blocked"
+        for error in errors
+    ) or (
+        config.browser_mode == "headless"
+        and any(
+            str(error.get("status_code", "")) == "403"
+            and str(error.get("browser") or "").strip() != ""
+            for error in errors
+        )
+    )
+
+    adaptive_wait_used_count = int(getattr(config, "adaptive_wait_used_count", 0) or 0)
+    adaptive_wait_total_ms = int(getattr(config, "adaptive_wait_total_ms", 0) or 0)
+    adaptive_wait_avg_ms = adaptive_wait_total_ms / adaptive_wait_used_count if adaptive_wait_used_count > 0 else 0.0
+
+    summary_dict = {
         "run_id": run_id,
         "started_at_utc": started_at.isoformat(),
         "finished_at_utc": finished_at.isoformat(),
         "duration_seconds": round(duration.total_seconds(), 2),
-        "target_state": config.state,
-        "start_url": config.state_page_url.format(page=0),
-        "max_vendors": config.max_vendors,
-        "max_cars_per_vendor": config.max_cars_per_vendor,
-        "resume": config.resume,
+        "adaptive_wait_used_count": adaptive_wait_used_count,
+        "adaptive_wait_success_count": int(getattr(config, "adaptive_wait_success_count", 0) or 0),
+        "adaptive_wait_timeout_count": int(getattr(config, "adaptive_wait_timeout_count", 0) or 0),
+        "adaptive_wait_error_count": int(getattr(config, "adaptive_wait_error_count", 0) or 0),
+        "adaptive_wait_total_ms": adaptive_wait_total_ms,
+        "adaptive_wait_avg_ms": round(adaptive_wait_avg_ms, 2),
+        "adaptive_wait_max_ms": int(getattr(config, "adaptive_wait_max_ms", 0) or 0),
+        "target_state": _state_label(config.state),
+        "target_state_slug": config.state,
+        "search_state": _state_label(config.state),
+        "mode": mode_str,
         "pipeline_mode": config.pipeline_mode,
-        "fetch_strategy": config.fetch_strategy,
-        "browser": config.browser,
         "browser_mode": config.browser_mode,
+        "strict_headless_blocked": bool(strict_headless_blocked),
+        "fetch_strategy": config.fetch_strategy,
         "detail_policy": config.detail_policy,
-        "checkpoint_every": config.checkpoint_every,
-        "flush_every": config.flush_every,
-        "skip_vehicle_details": config.skip_vehicle_details,
-        "discovered_vendor_count": len(df_vendors),
+        "detail_open_strategy": str(getattr(config, "detail_open_strategy", "")),
+        "vendor_concurrency": config.vendor_concurrency,
+        "vehicle_detail_concurrency": config.vehicle_detail_concurrency,
+        "regional_discovered_count": int(getattr(config, "regional_discovered_count", 0) or len(df_vendors)),
+        "discovered_vendor_count": int(getattr(config, "regional_discovered_count", 0) or len(df_vendors)),
+        "enqueued_vendor_count": int(getattr(config, "enqueued_vendor_count", 0) or len(df_vendors)),
         "processed_vendor_count": len(df_vendors),
-        "failed_vendor_count": vendor_error_count,
-        "vendor_success_rate": vendor_success_rate,
-        "listed_vehicle_count_total": len(df_cars_raw),
-        "extracted_vehicle_count": len(df_cars_processed),
-        "failed_vehicle_count": vehicle_error_count,
-        "vehicle_success_rate": vehicle_success_rate,
-        "output_vendor_rows": len(df_vendors),
-        "output_vehicle_rows": len(df_cars_processed),
+        "extracted_vehicle_count": extracted_count,
         "error_count": len(errors),
-        "fetch_strategy_counts": json.dumps(fetch_strategy_counts, ensure_ascii=False),
-        "browser_counts": json.dumps(browser_counts, ensure_ascii=False),
-        # Backward-compatible keys used by older report tests.
-        "state": config.state,
-        "vendors": len(df_vendors),
-        "vehicles_raw": len(df_cars_raw),
-        "vehicles_processed": len(df_cars_processed),
-        "errors": len(errors),
+        "warning_count": len(detail_errors),
+        "detail_fetch_403_count": detail_fetch_403_count,
+        "detail_fetch_503_count": detail_fetch_503_count,
+        "detail_fetch_failed_count": len(detail_errors),
+        "detail_site_blocked_or_503_count": detail_site_blocked_or_503_count,
+        "vehicle_detail_jobs_total": int(getattr(config, "vehicle_detail_jobs_total", 0) or 0),
+        "detail_needed_count": int(getattr(config, "detail_needed_count", 0) or 0),
+        "detail_skipped_count": int(getattr(config, "detail_skipped_count", 0) or 0),
+        "detail_attempted_count": int(getattr(config, "detail_attempted_count", 0) or 0),
+        "detail_success_count": int(getattr(config, "detail_success_count", 0) or 0),
+        "detail_failed_count": int(getattr(config, "detail_failed_count", 0) or len(detail_errors)),
+        "listing_fallback_used_count": listing_fallback_used_count,
+        "cookie_modal_visible_count": int(getattr(config, "cookie_modal_visible_count", 0) or 0),
+        "cookie_consent_click_count": int(getattr(config, "cookie_consent_click_count", 0) or 0),
+        "cookie_modal_remaining_count": int(getattr(config, "cookie_modal_remaining_count", 0) or 0),
+        "playwright_browser_opened_count": int(getattr(config, "playwright_browser_opened_count", 0) or 0),
+        "regional_browser_opened_count": int(getattr(config, "regional_browser_opened_count", 0) or 0),
+        "vendor_browser_opened_count": int(getattr(config, "vendor_browser_opened_count", 0) or 0),
+        "vehicle_detail_browser_opened_count": int(getattr(config, "vehicle_detail_browser_opened_count", 0) or 0),
+        "active_playwright_browser_count": int(getattr(config, "active_playwright_browser_count", 0) or 0),
+        "max_active_playwright_browser_count": int(getattr(config, "max_active_playwright_browser_count", 0) or 0),
+        "idle_about_blank_count": int(getattr(config, "idle_about_blank_count", 0) or 0),
+        "host_chrome_cdp_used_count": int(getattr(config, "host_chrome_cdp_used_count", 0) or 0),
+        "host_chrome_cdp_success_count": int(getattr(config, "host_chrome_cdp_success_count", 0) or 0),
+        "host_chrome_cdp_failed_count": int(getattr(config, "host_chrome_cdp_failed_count", 0) or 0),
+        "host_chrome_cdp_blocked_count": int(getattr(config, "host_chrome_cdp_blocked_count", 0) or 0),
+        "avg_seconds_per_vehicle": round(avg_sec, 2),
+        "vehicles_per_hour": round(veh_per_hour, 2),
+        "estimated_hours_for_20000_vehicles": round(est_20k, 2),
+        **coverage_metrics,
     }
+
+    if getattr(config, "benchmark", False):
+        bench_file = config.output_dir / "benchmark_summary.json"
+        bench_file.parent.mkdir(parents=True, exist_ok=True)
+        import json as _json
+        with open(bench_file, "w", encoding="utf-8") as f:
+            _json.dump(summary_dict, f, indent=2)
+        import logging
+        logging.getLogger("mobile_de.main").info("=== BENCHMARK RESULT ===")
+        logging.getLogger("mobile_de.main").info(_json.dumps(summary_dict, indent=2))
+
+    return summary_dict
 
 
 def _save_errors(errors: list[dict[str, Any]], output_dir: Path) -> None:

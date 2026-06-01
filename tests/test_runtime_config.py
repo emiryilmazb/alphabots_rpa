@@ -40,6 +40,12 @@ def test_parse_browser_options(monkeypatch):
             "3",
             "--detail-policy",
             "financing-only",
+            "--detail-open-strategy",
+            "HOST-CHROME-CDP",
+            "--chrome-cdp-url",
+            "http://127.0.0.1:9333",
+            "--detail-max-retries",
+            "1",
             "--output-dir",
             str(Path("custom-output")),
             "--clean-run",
@@ -62,6 +68,9 @@ def test_parse_browser_options(monkeypatch):
     assert config.vendor_concurrency == 2
     assert config.vehicle_detail_concurrency == 3
     assert config.detail_policy == "financing-only"
+    assert config.detail_open_strategy == "host-chrome-cdp"
+    assert config.chrome_cdp_url == "http://127.0.0.1:9333"
+    assert config.detail_max_retries == 1
     assert config.clean_run is True
     assert config.resume is False
     assert config.output_dir == Path("custom-output")
@@ -104,6 +113,51 @@ def test_detail_policy_uses_listing_data_before_detail_fetch():
         ScraperConfig(detail_policy="financing-only"),
         url,
         {**complete, "Finanzierung": "100 € mtl."},
+    ) is False
+
+
+def test_uc_popup_missing_required_policy_checks_detail_target_fields():
+    url = "https://suchen.mobile.de/fahrzeuge/details.html?id=123456789"
+    basic_complete = {
+        "Markes": "VW",
+        "Models": "Golf",
+        "Fahrzeugtyp": "Limousine",
+        "Preis": "10.000 €",
+        "Kilometerstand": "10.000 km",
+        "Erstzulassung": "03/2024",
+    }
+
+    assert should_fetch_vehicle_detail(
+        ScraperConfig(detail_policy="missing-required", detail_open_strategy="uc-popup"),
+        url,
+        basic_complete,
+    ) is True
+    assert should_fetch_vehicle_detail(
+        ScraperConfig(detail_policy="missing-required", detail_open_strategy="uc-popup"),
+        url,
+        {
+            **basic_complete,
+            "CO₂-Emissionen": "120 g/km",
+            "Baureihe": "8",
+            "Ausstattungslinie": "Life",
+            "Anzahl der Fahrzeughalter": "1",
+        },
+    ) is False
+    assert should_fetch_vehicle_detail(
+        ScraperConfig(detail_policy="missing-required", detail_open_strategy="uc-popup"),
+        url,
+        {
+            "Markes": "",
+            "Models": "",
+            "Fahrzeugtyp": "",
+            "Preis": "",
+            "Kilometerstand": "",
+            "Erstzulassung": "",
+            "CO₂-Emissionen": "120 g/km",
+            "Baureihe": "8",
+            "Ausstattungslinie": "Life",
+            "Anzahl der Fahrzeughalter": "1",
+        },
     ) is False
 
 
