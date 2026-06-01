@@ -1,8 +1,12 @@
 # Python
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
 venv/
 env/
 .env
@@ -10,8 +14,11 @@ env/
 # Logs
 logs/
 *.log
+*.tmp
+*.bak
 
 # Data and Output
+data/runs/
 data/checkpoints/*
 !data/checkpoints/.gitkeep
 data/output/*

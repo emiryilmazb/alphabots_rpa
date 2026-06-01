@@ -168,6 +168,13 @@ data/runs/<run_id>/source_audit/detail_strategy_matrix.json
 
 Root `data/raw`, `data/state`, and `data/output` are not overwritten during guarded run-folder execution.
 
+Validated final submission artifacts are kept under:
+
+```text
+data/final_submission_output/mobile_de_nrw_dashboard.xlsx
+data/final_submission_output/mobile_de_nrw_report.docx
+```
+
 ## Excel Workbook
 
 The Excel workbook contains the required raw, processed, summary, coverage, error, compliance, and dashboard outputs.
@@ -306,6 +313,16 @@ The project is not 1:1 source-complete because mobile.de does not expose every r
 
 ## Tests
 
+Validate the final workbook:
+
 ```powershell
+venv\Scripts\python.exe tools\validate_dashboard.py data\final_submission_output\mobile_de_nrw_dashboard.xlsx --min-vendors 25 --min-vehicles 180
+```
+
+Run the local test suite:
+
+```powershell
+venv\Scripts\python.exe -m compileall src tests tools
 venv\Scripts\python.exe -m pytest tests/ -v --tb=short
+venv\Scripts\python.exe -m pip check
 ```

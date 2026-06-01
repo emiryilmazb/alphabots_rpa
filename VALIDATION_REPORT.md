@@ -1,7 +1,8 @@
 # Validation Report
 
-## 1. Final Branch and Purpose
+## 1. Final Branch, Commit, and Purpose
 - **final branch:** `improvements`
+- **audit baseline commit:** `26fbecb`
 - **production/deployable architecture:** Docker/Xvfb
 - **host Chrome CDP:** optional local recovery/enrichment only
 - **adaptive profile:** explicit command profile, not an implicit local browser dependency
@@ -39,7 +40,14 @@ venv\Scripts\python.exe tools\enrich_vehicle_details.py --input-cars <cars_raw.j
 
 CDP is not required for EC2/ECS deployment and is never used unless explicitly selected.
 
-## 4. Sharding
+## 4. Final Submission Artifacts
+- `data\final_submission_output\mobile_de_nrw_dashboard.xlsx`
+- `data\final_submission_output\mobile_de_nrw_report.docx`
+- final workbook validation passed with 25 vendor rows and 186 vehicle rows
+- required workbook sheets and required columns are present
+- classification validation passed; `Andere` is allowed as the documented fallback
+
+## 5. Sharding
 - 1 shard is safest under live-source blocking
 - 2 shards can be used if the source remains stable
 - 4-shard is recommended only for controlled validation/benchmarking on the tested 16GB Windows host
@@ -48,7 +56,7 @@ CDP is not required for EC2/ECS deployment and is never used unless explicitly s
 - isolated data roots prevent SQLite locks
 - global Händler ID prevents duplicates
 
-## 5. Regional discovery / max pages
+## 6. Regional discovery / max pages
 - regional pagination supports `--max-pages`
 - `--max-pages` is recommended for capped validation runs
 - regional runaway guard exists:
@@ -57,7 +65,7 @@ CDP is not required for EC2/ECS deployment and is never used unless explicitly s
 - full discovery previously found around 1,140 NRW vendors, but live source changes can vary
 - avoid interpreting live source variability as parser failure
 
-## 6. Merge/output
+## 7. Merge/output
 - `tools/merge_runs.py` merges shard outputs
 - supports:
   - list-shaped raw JSON
@@ -68,10 +76,13 @@ CDP is not required for EC2/ECS deployment and is never used unless explicitly s
 - output Excel and Word are generated under merged output folder
 - Run_Summary, Data_Coverage, Requirements_Compliance are Excel sheets, not necessarily standalone files
 
-## 7. Dashboard validation
-- document `tools/validate_dashboard.py`
-- it validates workbook sheets and row counts
-- it should check:
+## 8. Dashboard validation
+Dashboard validation command:
+```powershell
+venv\Scripts\python.exe tools\validate_dashboard.py data\final_submission_output\mobile_de_nrw_dashboard.xlsx --min-vendors 25 --min-vehicles 180
+```
+
+The validator checks:
   - Vendors
   - Vehicles / Cars_Processed as applicable
   - Run_Summary
@@ -83,12 +94,21 @@ CDP is not required for EC2/ECS deployment and is never used unless explicitly s
   - no literal Unknown/Other in final classifications
   - Andere fallback allowed
 
-## 8. Test status
-- final tests: 137 passed / 0 failed
+Final workbook validation result:
+- Vendors: 25 rows
+- Vehicles: 186 rows
+- Run_Summary: 64 rows
+- Data_Coverage: 131 rows
+- Requirements_Compliance: 59 rows
+- validation status: passed
+
+## 9. Test status
+- final tests: 153 passed / 0 failed
+- warnings: 2 pandas deprecation warnings in cleaning tests
 - compileall passed
 - pip check passed
 
-## 9. Limitations
+## 10. Coverage Summary and Limitations
 - financing fields are source-dependent
 - technical/detail fields are complete only when detail pages are reached
 - live mobile.de behavior can change
@@ -97,6 +117,8 @@ CDP is not required for EC2/ECS deployment and is never used unless explicitly s
 - 4-shard recommended, higher shard counts not guaranteed on 16GB Windows host
 - no fake values are inserted; missing values are reported in Data_Coverage and Requirements_Compliance
 - `Andere` is the approved fallback for task-defined classification values outside the requested origin/category lists
+- Data_Coverage measures per-field non-empty counts and coverage percentages
+- Requirements_Compliance records required field status, current source, current coverage percentage, missing count, and risk level
 
-## 10. Final Verification Statement
+## 11. Final Verification Statement
 Technical/detail fields are complete only when detail pages are successfully reached. Financing fields are extracted where available from the source. Schema completeness is guaranteed; source completeness is measured.
