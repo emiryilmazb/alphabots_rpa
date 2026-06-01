@@ -112,16 +112,20 @@ class StateStore:
 
     async def latest_config_hash(self, state: str) -> str | None:
         async with self._lock:
-            row = self._require_conn().execute(
-                """
+            row = (
+                self._require_conn()
+                .execute(
+                    """
                 SELECT config_hash
                 FROM runs
                 WHERE state = ?
                 ORDER BY started_at DESC
                 LIMIT 1
                 """,
-                (state,),
-            ).fetchone()
+                    (state,),
+                )
+                .fetchone()
+            )
         return row["config_hash"] if row else None
 
     async def finish_run(self, run_id: str, status: str = STATUS_DONE) -> None:
@@ -147,7 +151,9 @@ class StateStore:
             )
             conn.commit()
 
-    async def queue_vendor_jobs(self, run_id: str, dealers: list[dict[str, Any]]) -> list[VendorJob]:
+    async def queue_vendor_jobs(
+        self, run_id: str, dealers: list[dict[str, Any]]
+    ) -> list[VendorJob]:
         """Persist vendor jobs and return jobs still needing work."""
         jobs: list[VendorJob] = []
         prepared: list[dict[str, Any]] = []
@@ -163,7 +169,8 @@ class StateStore:
             existing_ids = [
                 int(str(row["haendler_id"])[1:])
                 for row in conn.execute("SELECT haendler_id FROM vendors").fetchall()
-                if str(row["haendler_id"]).startswith("C") and str(row["haendler_id"])[1:].isdigit()
+                if str(row["haendler_id"]).startswith("C")
+                and str(row["haendler_id"])[1:].isdigit()
             ]
             next_id = max(existing_ids, default=0) + 1
             for index, dealer in enumerate(prepared, start=1):
@@ -172,7 +179,11 @@ class StateStore:
                     "SELECT haendler_id, status, run_id FROM vendors WHERE normalized_vendor_url = ?",
                     (url,),
                 ).fetchone()
-                haendler_id = existing["haendler_id"] if existing else f"C{dealer.get('global_index', next_id):07d}"
+                haendler_id = (
+                    existing["haendler_id"]
+                    if existing
+                    else f"C{dealer.get('global_index', next_id):07d}"
+                )
                 if not existing:
                     next_id += 1
                 status = existing["status"] if existing else STATUS_QUEUED
@@ -213,7 +224,9 @@ class StateStore:
             conn.commit()
         return jobs
 
-    async def pending_vendor_jobs(self, run_id: str = "", limit: int = 0) -> list[VendorJob]:
+    async def pending_vendor_jobs(
+        self, run_id: str = "", limit: int = 0
+    ) -> list[VendorJob]:
         query = """
             SELECT normalized_vendor_url, haendler_id, dealer_json
             FROM vendors
@@ -227,14 +240,28 @@ class StateStore:
         async with self._lock:
             rows = self._require_conn().execute(query, params).fetchall()
         return [
-            VendorJob(row["normalized_vendor_url"], row["haendler_id"], _json_loads(row["dealer_json"]))
+            VendorJob(
+                row["normalized_vendor_url"],
+                row["haendler_id"],
+                _json_loads(row["dealer_json"]),
+            )
             for row in rows
         ]
 
-    async def mark_vendor_processing(self, normalized_vendor_url: str, run_id: str = "") -> None:
-        await self._set_status("vendors", "normalized_vendor_url", normalized_vendor_url, STATUS_PROCESSING, run_id)
+    async def mark_vendor_processing(
+        self, normalized_vendor_url: str, run_id: str = ""
+    ) -> None:
+        await self._set_status(
+            "vendors",
+            "normalized_vendor_url",
+            normalized_vendor_url,
+            STATUS_PROCESSING,
+            run_id,
+        )
 
-    async def save_vendor_done(self, normalized_vendor_url: str, vendor: dict[str, Any]) -> None:
+    async def save_vendor_done(
+        self, normalized_vendor_url: str, vendor: dict[str, Any]
+    ) -> None:
         async with self._lock:
             conn = self._require_conn()
             run_id = str(vendor.get("run_id", ""))
@@ -244,11 +271,20 @@ class StateStore:
                 SET vendor_json = ?, status = ?, updated_at = ?
                 WHERE normalized_vendor_url = ? AND (? = '' OR run_id = ?)
                 """,
-                (_json_dumps(vendor), STATUS_DONE, utc_now(), normalized_vendor_url, run_id, run_id),
+                (
+                    _json_dumps(vendor),
+                    STATUS_DONE,
+                    utc_now(),
+                    normalized_vendor_url,
+                    run_id,
+                    run_id,
+                ),
             )
             conn.commit()
 
-    async def mark_vendor_failed(self, normalized_vendor_url: str, error: str, run_id: str = "") -> None:
+    async def mark_vendor_failed(
+        self, normalized_vendor_url: str, error: str, run_id: str = ""
+    ) -> None:
         async with self._lock:
             conn = self._require_conn()
             conn.execute(
@@ -257,7 +293,14 @@ class StateStore:
                 SET status = ?, last_error = ?, updated_at = ?
                 WHERE normalized_vendor_url = ? AND (? = '' OR run_id = ?)
                 """,
-                (STATUS_FAILED, error, utc_now(), normalized_vendor_url, run_id, run_id),
+                (
+                    STATUS_FAILED,
+                    error,
+                    utc_now(),
+                    normalized_vendor_url,
+                    run_id,
+                    run_id,
+                ),
             )
             conn.commit()
 
@@ -319,11 +362,21 @@ class StateStore:
                     ),
                 )
                 if not same_run or existing["status"] != STATUS_DONE:
-                    jobs.append(VehicleJob(vehicle_url, normalized_vendor_url, haendler_id, vendor_info, entry))
+                    jobs.append(
+                        VehicleJob(
+                            vehicle_url,
+                            normalized_vendor_url,
+                            haendler_id,
+                            vendor_info,
+                            entry,
+                        )
+                    )
             conn.commit()
         return jobs
 
-    async def pending_vehicle_jobs(self, run_id: str = "", limit: int = 0) -> list[VehicleJob]:
+    async def pending_vehicle_jobs(
+        self, run_id: str = "", limit: int = 0
+    ) -> list[VehicleJob]:
         query = """
             SELECT vehicle_url, normalized_vendor_url, haendler_id, vendor_info_json, fallback_json
             FROM vehicle_jobs
@@ -360,7 +413,9 @@ class StateStore:
             )
             conn.commit()
 
-    async def save_vehicle_done(self, vehicle_url: str, vehicle: dict[str, Any]) -> None:
+    async def save_vehicle_done(
+        self, vehicle_url: str, vehicle: dict[str, Any]
+    ) -> None:
         async with self._lock:
             conn = self._require_conn()
             now = utc_now()
@@ -390,11 +445,19 @@ class StateStore:
                 SET status = ?, updated_at = ?
                 WHERE vehicle_url = ? AND (? = '' OR run_id = ?)
                 """,
-                (STATUS_DONE, now, vehicle_url, vehicle.get("run_id", ""), vehicle.get("run_id", "")),
+                (
+                    STATUS_DONE,
+                    now,
+                    vehicle_url,
+                    vehicle.get("run_id", ""),
+                    vehicle.get("run_id", ""),
+                ),
             )
             conn.commit()
 
-    async def mark_vehicle_failed(self, vehicle_url: str, error: str, run_id: str = "") -> None:
+    async def mark_vehicle_failed(
+        self, vehicle_url: str, error: str, run_id: str = ""
+    ) -> None:
         async with self._lock:
             conn = self._require_conn()
             conn.execute(
@@ -436,15 +499,19 @@ class StateStore:
 
     async def export_vendors(self, run_id: str = "") -> list[dict[str, Any]]:
         async with self._lock:
-            rows = self._require_conn().execute(
-                """
+            rows = (
+                self._require_conn()
+                .execute(
+                    """
                 SELECT vendor_json, haendler_id, normalized_vendor_url
                 FROM vendors
                 WHERE status = ? AND vendor_json IS NOT NULL AND (? = '' OR run_id = ?)
                 ORDER BY haendler_id
                 """,
-                (STATUS_DONE, run_id, run_id),
-            ).fetchall()
+                    (STATUS_DONE, run_id, run_id),
+                )
+                .fetchall()
+            )
         vendors = []
         for row in rows:
             vendor = _json_loads(row["vendor_json"])
@@ -455,42 +522,56 @@ class StateStore:
 
     async def export_vehicles(self, run_id: str = "") -> list[dict[str, Any]]:
         async with self._lock:
-            rows = self._require_conn().execute(
-                """
+            rows = (
+                self._require_conn()
+                .execute(
+                    """
                 SELECT data_json
                 FROM vehicles
                 WHERE status = ? AND (? = '' OR run_id = ?)
                 ORDER BY haendler_id, vehicle_url
                 """,
-                (STATUS_DONE, run_id, run_id),
-            ).fetchall()
+                    (STATUS_DONE, run_id, run_id),
+                )
+                .fetchall()
+            )
         return [_json_loads(row["data_json"]) for row in rows]
 
     async def export_errors(self, run_id: str = "") -> list[dict[str, Any]]:
         async with self._lock:
-            rows = self._require_conn().execute(
-                """
+            rows = (
+                self._require_conn()
+                .execute(
+                    """
                 SELECT run_id, timestamp, stage, url, status_code, fetch_strategy,
                        browser, attempt, error_type, error_message, screenshot_path, html_dump_path
                 FROM errors
                 WHERE ? = '' OR run_id = ?
                 ORDER BY id
                 """,
-                (run_id, run_id),
-            ).fetchall()
+                    (run_id, run_id),
+                )
+                .fetchall()
+            )
         return [dict(row) for row in rows]
 
     async def count_by_status(self, table: str, run_id: str = "") -> dict[str, int]:
         if table not in {"vendors", "vehicle_jobs"}:
             raise ValueError(f"Unsupported status table: {table}")
         async with self._lock:
-            rows = self._require_conn().execute(
-                f"SELECT status, COUNT(*) AS count FROM {table} WHERE ? = '' OR run_id = ? GROUP BY status",
-                (run_id, run_id),
-            ).fetchall()
+            rows = (
+                self._require_conn()
+                .execute(
+                    f"SELECT status, COUNT(*) AS count FROM {table} WHERE ? = '' OR run_id = ? GROUP BY status",
+                    (run_id, run_id),
+                )
+                .fetchall()
+            )
         return {row["status"]: int(row["count"]) for row in rows}
 
-    async def _set_status(self, table: str, key: str, value: str, status: str, run_id: str = "") -> None:
+    async def _set_status(
+        self, table: str, key: str, value: str, status: str, run_id: str = ""
+    ) -> None:
         if table not in {"vendors", "vehicle_jobs"}:
             raise ValueError(f"Unsupported status table: {table}")
         if key not in {"normalized_vendor_url", "vehicle_url"}:

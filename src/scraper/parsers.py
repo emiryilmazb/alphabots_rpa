@@ -5,9 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Iterator
 from typing import Any
-from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup, Tag
 
@@ -62,8 +61,17 @@ VEHICLE_CATEGORY_ALIASES = {
         "Van or truck up to 7.5 t",
         "Van or truck up to 7,5 t",
     ],
-    "TruckOver7500": ["Lkw ab 7,5 t", "LKW ab 7,5 t", "Truck over 7.5 t", "Truck over 7,5 t"],
-    "SemiTrailerTruck": ["Sattelzugmaschine", "Sattelzugmaschinen", "Semi-trailer truck"],
+    "TruckOver7500": [
+        "Lkw ab 7,5 t",
+        "LKW ab 7,5 t",
+        "Truck over 7.5 t",
+        "Truck over 7,5 t",
+    ],
+    "SemiTrailerTruck": [
+        "Sattelzugmaschine",
+        "Sattelzugmaschinen",
+        "Semi-trailer truck",
+    ],
     "SemiTrailer": ["Auflieger", "Semi-trailer"],
     "Trailer": ["Anhänger", "Anhaenger", "Trailer"],
     "ConstructionMachine": ["Baumaschine", "Baumaschinen"],
@@ -297,14 +305,6 @@ def dealer_identifier(url: str) -> str:
 # Next.js flight payload parsing
 
 
-
-
-
-
-
-
-
-
 # ---------------------------------------------------------------------------
 # Regional page parsing
 
@@ -429,106 +429,8 @@ def _extract_address_from_container(container: Tag | None) -> tuple[str, str, st
 # Vendor page parsing
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ---------------------------------------------------------------------------
 # Vehicle URL and detail parsing
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def parse_vehicle_specs(html: str) -> dict[str, str]:
@@ -572,7 +474,10 @@ def _extract_table_pairs(soup: BeautifulSoup, specs: dict[str, str]) -> None:
 
 def _extract_known_label_pairs(soup: BeautifulSoup, specs: dict[str, str]) -> None:
     elements = list(soup.find_all(True))
-    labels_lower = {_canonical_spec_label(label).lower(): _canonical_spec_label(label) for label in KNOWN_SPEC_LABELS}
+    labels_lower = {
+        _canonical_spec_label(label).lower(): _canonical_spec_label(label)
+        for label in KNOWN_SPEC_LABELS
+    }
     for index, elem in enumerate(elements):
         text = clean_text(elem.get_text(" ", strip=True)).rstrip(":")
         canonical = _canonical_spec_label(text)
@@ -581,7 +486,9 @@ def _extract_known_label_pairs(soup: BeautifulSoup, specs: dict[str, str]) -> No
                 label = _canonical_spec_label(raw_label) or raw_label
                 if not label:
                     continue
-                match = re.match(rf"^{re.escape(raw_label)}\s*[:\-]\s*(.+)$", text, re.I)
+                match = re.match(
+                    rf"^{re.escape(raw_label)}\s*[:\-]\s*(.+)$", text, re.I
+                )
                 if match:
                     canonical = label
                     value = match.group(1).strip(" :")
@@ -691,7 +598,10 @@ def _extract_quick_stats(text: str, specs: dict[str, str]) -> None:
         (r"\b(\d{1,4}\s*kW)\b", "Leistung"),
         (r"\bEZ\s*(\d{2}/\d{4})", "Erstzulassung"),
         (r"\bErstzulassung\s*[:\-]?\s*(\d{2}/\d{4})", "Erstzulassung"),
-        (r"\b(Benzin|Diesel|Elektro|Hybrid|Erdgas|Autogas|Wasserstoff)\b", "Kraftstoffart"),
+        (
+            r"\b(Benzin|Diesel|Elektro|Hybrid|Erdgas|Autogas|Wasserstoff)\b",
+            "Kraftstoffart",
+        ),
         (r"\b(Automatik|Schaltgetriebe|Halbautomatik)\b", "Getriebe"),
         (r"\b(\d+\s*g\s*/?\s*km)\b", "CO₂-Emissionen"),
         (r"\b(\d+[.,]?\d*\s*cm³)\b", "Hubraum"),
@@ -718,11 +628,23 @@ def _extract_description_line_specs(soup: BeautifulSoup, specs: dict[str, str]) 
         if not match:
             continue
         value = match.group(1) if match.lastindex else match.group(0)
-        value = re.split(r"\s+(?:[A-Z]\d{2,3}|\d{3}[A-Z]?|[A-Z]{2,4}\d?)\s+", value, maxsplit=1)[0]
-        value = re.split(r"\s+[A-Za-z0-9-]*Paket\b|\s+Exterieur\b|\s+Interieur\b", value, maxsplit=1, flags=re.I)[0]
-        value = re.sub(r"\b(?:Paket|Exterieur|Interieur|Sicherheit)\b.*$", "", value, flags=re.I)
+        value = re.split(
+            r"\s+(?:[A-Z]\d{2,3}|\d{3}[A-Z]?|[A-Z]{2,4}\d?)\s+", value, maxsplit=1
+        )[0]
+        value = re.split(
+            r"\s+[A-Za-z0-9-]*Paket\b|\s+Exterieur\b|\s+Interieur\b",
+            value,
+            maxsplit=1,
+            flags=re.I,
+        )[0]
+        value = re.sub(
+            r"\b(?:Paket|Exterieur|Interieur|Sicherheit)\b.*$", "", value, flags=re.I
+        )
         value = clean_text(value).strip(" -")
-        if value and value.lower() not in {"und -pakete", "ausstattungslinien und -pakete"}:
+        if value and value.lower() not in {
+            "und -pakete",
+            "ausstattungslinien und -pakete",
+        }:
             _add_spec(specs, "Ausstattungslinie", value)
             return
 
@@ -745,7 +667,9 @@ def _canonical_spec_label(label: str) -> str:
     if not label:
         return ""
     lowered = label.lower()
-    if lowered.startswith(("co₂-emissionen", "co2-emissionen", "co₂ emissionen", "co2 emissionen")):
+    if lowered.startswith(
+        ("co₂-emissionen", "co2-emissionen", "co₂ emissionen", "co2 emissionen")
+    ):
         return "CO₂-Emissionen"
     if label in KNOWN_SPEC_LABELS:
         return SPEC_LABEL_ALIASES.get(label, label)
@@ -799,10 +723,6 @@ def parse_vehicle_detail_fields(html: str) -> dict[str, str]:
     return fields
 
 
-
-
-
-
 def _parse_vehicle_json_ld(html: str) -> dict[str, str]:
     soup = BeautifulSoup(html, "lxml")
     for script in soup.find_all("script", type="application/ld+json"):
@@ -828,7 +748,15 @@ def _parse_vehicle_json_ld(html: str) -> dict[str, str]:
             }
     return {}
 
-from src.scraper.parser_modules.financing import parse_financing_data, _extract_financing_pairs
-from src.scraper.parser_modules.common import walk_json, iter_dicts, _none_if_placeholder, extract_next_payloads, _first_present
-from src.scraper.parser_modules.vendor import parse_vendor_json_ld, parse_vendor_next_data, parse_vendor_vehicle_count
-from src.scraper.parser_modules.vehicle_listing import parse_vehicle_listing_urls, parse_vehicle_listing_summaries, parse_vehicle_category_options, _category_options_from_sidebar_inputs, _category_sidebar_label, parse_vehicle_category_values, _category_count_from_obj, _parse_count_value, _parenthesized_count_from_text, _category_value_from_href, _category_aliases, _category_label_from_text, _category_count_from_text, _merge_listing_summary, _summary_score, _summary_from_search_result_listing, _localized_value, _model_text_from_listing, _vehicle_type_from_listing, _vehicle_body_label, _vehicle_condition_from_listing, _price_from_listing, _co2_from_listing, _financing_from_search_result_listing, _credit_term, parse_vehicle_urls_from_next_data, _is_valid_listing_id, _meaningful_strings, _choose_listing_title, split_vehicle_title, _strip_new_badge, _choose_price, _choose_attribute_text, extract_listing_attribute_fields, _first_attribute, _first_match, _is_vehicle_href, parse_vehicle_title, _strip_brand, _strip_price_from_title, parse_vehicle_price
+
+from src.scraper.parser_modules.financing import parse_financing_data
+from src.scraper.parser_modules.common import (
+    walk_json,
+    iter_dicts,
+    _none_if_placeholder,
+    extract_next_payloads,
+)
+from src.scraper.parser_modules.vehicle_listing import (
+    parse_vehicle_title,
+    parse_vehicle_price,
+)

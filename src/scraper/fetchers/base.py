@@ -39,8 +39,10 @@ class FetchResult:
 
     @property
     def ok(self) -> bool:
-        return not self.error_type and bool(self.html) and (
-            self.status_code is None or 200 <= self.status_code < 400
+        return (
+            not self.error_type
+            and bool(self.html)
+            and (self.status_code is None or 200 <= self.status_code < 400)
         )
 
 

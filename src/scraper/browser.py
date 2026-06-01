@@ -9,7 +9,6 @@ import os
 import random
 import re
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
 from playwright.async_api import (
@@ -25,7 +24,9 @@ try:
 except Exception:  # pragma: no cover - compatibility fallback for Playwright internals
     TargetClosedError = None  # type: ignore[assignment]
 
-TARGET_CLOSED_ERROR_TYPES = (TargetClosedError,) if TargetClosedError is not None else ()
+TARGET_CLOSED_ERROR_TYPES = (
+    (TargetClosedError,) if TargetClosedError is not None else ()
+)
 
 
 def _is_target_closed_error(exc: Exception) -> bool:
@@ -35,7 +36,11 @@ def _is_target_closed_error(exc: Exception) -> bool:
     if type(exc).__name__ == "TargetClosedError":
         return True
     msg = str(exc).lower()
-    return "target page, context or browser has been closed" in msg or "target closed" in msg
+    return (
+        "target page, context or browser has been closed" in msg
+        or "target closed" in msg
+    )
+
 
 from src.config import ScraperConfig
 
@@ -86,7 +91,12 @@ class BrowserManager:
         """Launch browser and return the main page."""
         if self._page is not None and self._healthy:
             return self._page
-        if self._page is not None or self._context is not None or self._browser is not None or self._pw is not None:
+        if (
+            self._page is not None
+            or self._context is not None
+            or self._browser is not None
+            or self._pw is not None
+        ):
             await self.close()
 
         headless = self.config.browser_mode == "headless" or self.config.headless
@@ -115,16 +125,25 @@ class BrowserManager:
                 **context_kwargs,
             )
             self._browser = self._context.browser
-            self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()
+            self._page = (
+                self._context.pages[0]
+                if self._context.pages
+                else await self._context.new_page()
+            )
         else:
             self._browser = await browser_type.launch(
                 **launch_kwargs,
                 slow_mo=self.config.slow_mo,
             )
-            if self.config.storage_state is not None and self.config.storage_state.exists():
+            if (
+                self.config.storage_state is not None
+                and self.config.storage_state.exists()
+            ):
                 if getattr(self.config, "use_storage_state", False):
                     context_kwargs["storage_state"] = str(self.config.storage_state)
-                    logger.info("Loaded storage state from %s", self.config.storage_state)
+                    logger.info(
+                        "Loaded storage state from %s", self.config.storage_state
+                    )
             self._context = await self._browser.new_context(**context_kwargs)
             self._page = await self._context.new_page()
 
@@ -141,7 +160,10 @@ class BrowserManager:
 
     @property
     def has_open_browser(self) -> bool:
-        return any(resource is not None for resource in (self._page, self._context, self._browser, self._pw))
+        return any(
+            resource is not None
+            for resource in (self._page, self._context, self._browser, self._pw)
+        )
 
     def mark_unhealthy(self, reason: str = "") -> None:
         self._healthy = False
@@ -202,8 +224,13 @@ class BrowserManager:
         visible_button = None
         modal_visible = False
         for _ in range(10):
-            visible_button = await self._first_visible_locator(COOKIE_ACCEPT_BUTTON_SELECTORS)
-            modal_visible = visible_button is not None or await self._cookie_modal_container_visible()
+            visible_button = await self._first_visible_locator(
+                COOKIE_ACCEPT_BUTTON_SELECTORS
+            )
+            modal_visible = (
+                visible_button is not None
+                or await self._cookie_modal_container_visible()
+            )
             if visible_button is not None or not modal_visible:
                 break
             await self.page.wait_for_timeout(500)
@@ -221,10 +248,14 @@ class BrowserManager:
 
         try:
             await self.page.wait_for_timeout(1000)
-            visible_button = await self._first_visible_locator(COOKIE_ACCEPT_BUTTON_SELECTORS)
+            visible_button = await self._first_visible_locator(
+                COOKIE_ACCEPT_BUTTON_SELECTORS
+            )
             if visible_button is None:
                 self._increment_config_counter("cookie_modal_remaining_count")
-                logger.warning("Cookie modal remaining; accept button disappeared before click.")
+                logger.warning(
+                    "Cookie modal remaining; accept button disappeared before click."
+                )
                 return
             await visible_button.click(timeout=5000)
             self._increment_config_counter("cookie_consent_click_count")
@@ -264,7 +295,8 @@ class BrowserManager:
 
     async def _cookie_modal_visible(self) -> bool:
         return (
-            await self._first_visible_locator(COOKIE_ACCEPT_BUTTON_SELECTORS) is not None
+            await self._first_visible_locator(COOKIE_ACCEPT_BUTTON_SELECTORS)
+            is not None
             or await self._cookie_modal_container_visible()
         )
 
@@ -287,7 +319,12 @@ class BrowserManager:
                     if not await self._cookie_modal_visible():
                         return
                 except Exception as e:
-                    logger.debug("Cookie consent retry failed (%s force=%s): %s", selector, force, e)
+                    logger.debug(
+                        "Cookie consent retry failed (%s force=%s): %s",
+                        selector,
+                        force,
+                        e,
+                    )
 
     async def _save_storage_state(self) -> None:
         if not (
@@ -313,20 +350,31 @@ class BrowserManager:
         role_counter = f"{self.role}_browser_opened_count"
         if hasattr(self.config, role_counter):
             self._increment_config_counter(role_counter)
-        active = int(getattr(self.config, "active_playwright_browser_count", 0) or 0) + 1
+        active = (
+            int(getattr(self.config, "active_playwright_browser_count", 0) or 0) + 1
+        )
         setattr(self.config, "active_playwright_browser_count", active)
-        max_active = max(int(getattr(self.config, "max_active_playwright_browser_count", 0) or 0), active)
+        max_active = max(
+            int(getattr(self.config, "max_active_playwright_browser_count", 0) or 0),
+            active,
+        )
         setattr(self.config, "max_active_playwright_browser_count", max_active)
         self._counted_open = True
-        logger.info("Playwright browser opened for role=%s active=%d.", self.role, active)
+        logger.info(
+            "Playwright browser opened for role=%s active=%d.", self.role, active
+        )
 
     def _record_browser_closed(self) -> None:
         if not self._counted_open:
             return
-        active = max(0, int(getattr(self.config, "active_playwright_browser_count", 0) or 0) - 1)
+        active = max(
+            0, int(getattr(self.config, "active_playwright_browser_count", 0) or 0) - 1
+        )
         setattr(self.config, "active_playwright_browser_count", active)
         self._counted_open = False
-        logger.info("Playwright browser closed for role=%s active=%d.", self.role, active)
+        logger.info(
+            "Playwright browser closed for role=%s active=%d.", self.role, active
+        )
 
     def _page_is_about_blank(self) -> bool:
         try:
@@ -340,7 +388,9 @@ class BrowserManager:
         logger.debug("Polite delay: %.1fs", delay)
         await asyncio.sleep(delay)
 
-    async def safe_goto(self, url: str, timeout: int = 45000, max_retries: int | None = None) -> bool:
+    async def safe_goto(
+        self, url: str, timeout: int = 45000, max_retries: int | None = None
+    ) -> bool:
         """
         Navigate to URL with error handling.
 
@@ -352,7 +402,9 @@ class BrowserManager:
         self.last_html_dump_path = ""
         target_closed_recovered = False
 
-        retry_count = max(1, int(max_retries if max_retries is not None else self.config.max_retries))
+        retry_count = max(
+            1, int(max_retries if max_retries is not None else self.config.max_retries)
+        )
         for attempt in range(1, retry_count + 1):
             try:
                 response = await self.page.goto(
@@ -366,12 +418,21 @@ class BrowserManager:
                     body_text = await self._safe_body_text()
                     self.last_error = f"HTTP {response.status}"
                     if self._looks_edgesuite_error(body_text):
-                        self.last_error = f"HTTP {response.status}: detail_site_blocked_or_503"
+                        self.last_error = (
+                            f"HTTP {response.status}: detail_site_blocked_or_503"
+                        )
                     elif self._looks_blocked(body_text):
-                        self.last_error = f"HTTP {response.status}: access denied by site protection"
+                        self.last_error = (
+                            f"HTTP {response.status}: access denied by site protection"
+                        )
                     logger.warning("%s for %s", self.last_error, url)
-                    await self._save_debug_artifacts(url, f"http-{response.status}-attempt-{attempt}")
-                    if response.status in {429, 500, 502, 503, 504} and attempt < retry_count:
+                    await self._save_debug_artifacts(
+                        url, f"http-{response.status}-attempt-{attempt}"
+                    )
+                    if (
+                        response.status in {429, 500, 502, 503, 504}
+                        and attempt < retry_count
+                    ):
                         await asyncio.sleep(self.config.retry_delay * attempt)
                         continue
                     return False
@@ -447,7 +508,9 @@ class BrowserManager:
         screenshot_dir = self.config.debug_dir / "screenshots"
         html_dir.mkdir(parents=True, exist_ok=True)
         screenshot_dir.mkdir(parents=True, exist_ok=True)
-        run_id = self.config.run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        run_id = self.config.run_id or datetime.now(timezone.utc).strftime(
+            "%Y%m%dT%H%M%SZ"
+        )
         base = f"{run_id}_{self._artifact_base_name(url, reason)}"
 
         html_path = html_dir / f"{base}.html"

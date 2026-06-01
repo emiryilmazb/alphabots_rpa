@@ -78,8 +78,9 @@ class VendorScraper:
         self.config = config
         self.fetch_manager = FetchStrategyManager(config, browser)
 
-    async def scrape_vendor(self, dealer_entry: dict[str, str],
-                            bundesland: str) -> dict[str, Any]:
+    async def scrape_vendor(
+        self, dealer_entry: dict[str, str], bundesland: str
+    ) -> dict[str, Any]:
         """
         Scrape a single vendor's detailed information.
 
@@ -115,7 +116,9 @@ class VendorScraper:
             "search_state": bundesland,
         }
 
-        fetch_result = await self.fetch_manager.fetch(url, validator=self._validate_vendor_static)
+        fetch_result = await self.fetch_manager.fetch(
+            url, validator=self._validate_vendor_static
+        )
         if not fetch_result.ok:
             logger.warning("Failed to load vendor page: %s", url)
             _finalize_location_fields(vendor)
@@ -149,13 +152,21 @@ class VendorScraper:
             vendor["Städte"] = next_data.get("city") or vendor["Städte"]
             vendor["Land"] = next_data.get("country") or vendor["Land"]
             vendor["Bundesland"] = next_data.get("region") or vendor["Bundesland"]
-            vendor["Telephone Number"] = next_data.get("Telephone Number") or vendor["Telephone Number"]
-            vendor["2. Telephone Number"] = next_data.get("2. Telephone Number") or vendor["2. Telephone Number"]
-            vendor["MobilTelefon"] = next_data.get("MobilTelefon") or vendor["MobilTelefon"]
+            vendor["Telephone Number"] = (
+                next_data.get("Telephone Number") or vendor["Telephone Number"]
+            )
+            vendor["2. Telephone Number"] = (
+                next_data.get("2. Telephone Number") or vendor["2. Telephone Number"]
+            )
+            vendor["MobilTelefon"] = (
+                next_data.get("MobilTelefon") or vendor["MobilTelefon"]
+            )
             vendor["Fax Number"] = next_data.get("Fax Number") or vendor["Fax Number"]
             vendor["Email ID"] = next_data.get("email") or vendor["Email ID"]
             vendor["Hauptseite"] = next_data.get("homepage") or vendor["Hauptseite"]
-            vendor["Mobile.de_Links"] = next_data.get("url") or vendor["Mobile.de_Links"]
+            vendor["Mobile.de_Links"] = (
+                next_data.get("url") or vendor["Mobile.de_Links"]
+            )
 
         json_ld = parse_vendor_json_ld(html)
         if json_ld:
@@ -292,10 +303,22 @@ class VendorScraper:
         # Fax: +49 XXXX XXXXXX
 
         phone_patterns = [
-            (r"Tel\.?:\s*([\+\d\s\(\)/-]+?)(?=\s*(?:Tel|Mobil|Fax|Wir|Bei|Internet|$))", "Telephone Number"),
-            (r"Tel\.?\s*2:\s*([\+\d\s\(\)/-]+?)(?=\s*(?:Mobil|Fax|Wir|Bei|Internet|$))", "2. Telephone Number"),
-            (r"Mobil\.?:\s*([\+\d\s\(\)/-]+?)(?=\s*(?:Fax|Wir|Bei|Internet|$))", "MobilTelefon"),
-            (r"Fax\.?:\s*([\+\d\s\(\)/-]+?)(?=\s*(?:Wir|Bei|Internet|Impressum|$))", "Fax Number"),
+            (
+                r"Tel\.?:\s*([\+\d\s\(\)/-]+?)(?=\s*(?:Tel|Mobil|Fax|Wir|Bei|Internet|$))",
+                "Telephone Number",
+            ),
+            (
+                r"Tel\.?\s*2:\s*([\+\d\s\(\)/-]+?)(?=\s*(?:Mobil|Fax|Wir|Bei|Internet|$))",
+                "2. Telephone Number",
+            ),
+            (
+                r"Mobil\.?:\s*([\+\d\s\(\)/-]+?)(?=\s*(?:Fax|Wir|Bei|Internet|$))",
+                "MobilTelefon",
+            ),
+            (
+                r"Fax\.?:\s*([\+\d\s\(\)/-]+?)(?=\s*(?:Wir|Bei|Internet|Impressum|$))",
+                "Fax Number",
+            ),
         ]
 
         for pattern, field in phone_patterns:
@@ -328,7 +351,9 @@ class VendorScraper:
                 vendor["Standort"] = clean_text(addr_text)
 
         # Extract PLZ and city from "DE-XXXXX City" pattern
-        m = re.search(r"DE-(\d{5})\s+(\w[\w\s]*?)(?=\s*(?:Kontakt|Wir|Bei|$))", full_text)
+        m = re.search(
+            r"DE-(\d{5})\s+(\w[\w\s]*?)(?=\s*(?:Kontakt|Wir|Bei|$))", full_text
+        )
         if m:
             vendor["Land"] = vendor.get("Land") or "Deutschland"
             if not vendor["PLZ"]:
@@ -350,6 +375,7 @@ class VendorScraper:
                 # Look for email in the expanded section
                 html = await page.content()
                 from bs4 import BeautifulSoup
+
                 soup = BeautifulSoup(html, "lxml")
 
                 # Email pattern
@@ -403,7 +429,9 @@ def _finalize_location_fields(vendor: dict[str, Any]) -> None:
     country = _normalize_country_name(vendor.get("Land", ""))
     region = clean_text(vendor.get("Bundesland", ""))
     if _is_germany(country):
-        vendor["Bundesland"] = _german_state_from_postcode(vendor.get("PLZ", "")) or region
+        vendor["Bundesland"] = (
+            _german_state_from_postcode(vendor.get("PLZ", "")) or region
+        )
     else:
         vendor["Bundesland"] = "" if region in GERMAN_STATE_NAMES else region
     vendor["Land"] = country

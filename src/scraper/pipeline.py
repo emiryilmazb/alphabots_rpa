@@ -77,18 +77,30 @@ class SingleWriter:
                 if kind == "vendor_done":
                     await self.state.save_vendor_done(event["url"], event["vendor"])
                 elif kind == "vendor_failed":
-                    await self.state.mark_vendor_failed(event["url"], event.get("error", ""), self.run_id)
+                    await self.state.mark_vendor_failed(
+                        event["url"], event.get("error", ""), self.run_id
+                    )
                     await self._record_error("vendor", event)
                 elif kind == "vehicle_done":
                     await self.state.save_vehicle_done(event["url"], event["vehicle"])
                     self.processed_vehicles += 1
                     if self.processed_vehicles % self.flush_every == 0:
                         elapsed = time.time() - self.start_time
-                        rate = (self.processed_vehicles / elapsed) * 3600 if elapsed > 0 else 0
-                        avg_sec = elapsed / self.processed_vehicles if self.processed_vehicles > 0 else 0
+                        rate = (
+                            (self.processed_vehicles / elapsed) * 3600
+                            if elapsed > 0
+                            else 0
+                        )
+                        avg_sec = (
+                            elapsed / self.processed_vehicles
+                            if self.processed_vehicles > 0
+                            else 0
+                        )
                         eta_seconds = 0.0
                         if self.expected_vehicles and rate > 0:
-                            remaining = max(0, self.expected_vehicles - self.processed_vehicles)
+                            remaining = max(
+                                0, self.expected_vehicles - self.processed_vehicles
+                            )
                             eta_seconds = remaining / (rate / 3600)
                         logger.info(
                             "Processed %d vehicles | vehicles/hour=%.1f | avg_sec_per_vehicle=%.2f | eta_seconds=%.0f",
@@ -98,7 +110,9 @@ class SingleWriter:
                             eta_seconds,
                         )
                 elif kind == "vehicle_failed":
-                    await self.state.mark_vehicle_failed(event["url"], event.get("error", ""), self.run_id)
+                    await self.state.mark_vehicle_failed(
+                        event["url"], event.get("error", ""), self.run_id
+                    )
                     await self._record_error("vehicle", event)
                 elif kind == "error":
                     await self._record_error(event.get("stage", "pipeline"), event)
@@ -160,7 +174,9 @@ class RegionalDiscoveryProducer:
         finally:
             await browser.close()
             try:
-                if 'vehicle_scraper' in locals() and hasattr(vehicle_scraper, 'uc_popup_fetcher'):
+                if "vehicle_scraper" in locals() and hasattr(
+                    vehicle_scraper, "uc_popup_fetcher"
+                ):
                     await vehicle_scraper.close()
             except Exception:
                 pass
@@ -201,9 +217,15 @@ class VendorWorker:
                 try:
                     if job is None:
                         return
-                    if not started or getattr(browser, '_browser', None) is None or not browser._browser.is_connected():
+                    if (
+                        not started
+                        or getattr(browser, "_browser", None) is None
+                        or not browser._browser.is_connected()
+                    ):
                         if started:
-                            logger.info(f"{self.name}: Browser seems closed/poisoned. Restarting fresh browser.")
+                            logger.info(
+                                f"{self.name}: Browser seems closed/poisoned. Restarting fresh browser."
+                            )
                             try:
                                 await browser.close()
                             except:
@@ -212,13 +234,17 @@ class VendorWorker:
                         started = True
                     elif not browser.is_healthy:
                         await browser.ensure_started()
-                    await self._process_job_with_recovery(job, browser, vendor_scraper, vehicle_scraper)
+                    await self._process_job_with_recovery(
+                        job, browser, vendor_scraper, vehicle_scraper
+                    )
                 finally:
                     self.vendor_queue.task_done()
         finally:
             await browser.close()
             try:
-                if 'vehicle_scraper' in locals() and hasattr(vehicle_scraper, 'uc_popup_fetcher'):
+                if "vehicle_scraper" in locals() and hasattr(
+                    vehicle_scraper, "uc_popup_fetcher"
+                ):
                     await vehicle_scraper.close()
             except Exception:
                 pass
@@ -270,7 +296,12 @@ class VendorWorker:
                         exc,
                     )
                 else:
-                    logger.exception("%s failed vendor %s: %s", self.name, job.normalized_vendor_url, exc)
+                    logger.exception(
+                        "%s failed vendor %s: %s",
+                        self.name,
+                        job.normalized_vendor_url,
+                        exc,
+                    )
                 await self.writer_queue.put(
                     {
                         "kind": "vendor_failed",
@@ -292,15 +323,24 @@ class VendorWorker:
         try:
             vendor = await vendor_scraper.scrape_vendor(job.dealer, self.bundesland)
             vendor["Händler ID"] = job.haendler_id
-            vendor["Mobile.de_Links"] = normalize_dealer_url(
-                vendor.get("Mobile.de_Links", job.normalized_vendor_url)
-            ) or job.normalized_vendor_url
+            vendor["Mobile.de_Links"] = (
+                normalize_dealer_url(
+                    vendor.get("Mobile.de_Links", job.normalized_vendor_url)
+                )
+                or job.normalized_vendor_url
+            )
             vendor["run_id"] = self.run_id
             await self.writer_queue.put(
-                {"kind": "vendor_done", "url": job.normalized_vendor_url, "vendor": vendor}
+                {
+                    "kind": "vendor_done",
+                    "url": job.normalized_vendor_url,
+                    "vendor": vendor,
+                }
             )
 
-            vendor_url = normalize_dealer_url(vendor.get("Mobile.de_Links", job.normalized_vendor_url))
+            vendor_url = normalize_dealer_url(
+                vendor.get("Mobile.de_Links", job.normalized_vendor_url)
+            )
             vendor_info = {
                 "Händler ID": job.haendler_id,
                 "Händlername": vendor.get("Händlername", ""),
@@ -340,7 +380,9 @@ class VendorWorker:
                 browser.mark_unhealthy(str(exc))
                 raise
             else:
-                logger.exception("%s failed vendor %s: %s", self.name, job.normalized_vendor_url, exc)
+                logger.exception(
+                    "%s failed vendor %s: %s", self.name, job.normalized_vendor_url, exc
+                )
             await self.writer_queue.put(
                 {
                     "kind": "vendor_failed",
@@ -385,18 +427,24 @@ class VehicleDetailWorker:
         finally:
             await browser.close()
             try:
-                if 'vehicle_scraper' in locals() and hasattr(vehicle_scraper, 'uc_popup_fetcher'):
+                if "vehicle_scraper" in locals() and hasattr(
+                    vehicle_scraper, "uc_popup_fetcher"
+                ):
                     await vehicle_scraper.close()
             except Exception:
                 pass
 
     async def _get_next_job(self, browser: BrowserManager) -> VehicleJob | None:
-        idle_timeout = float(getattr(self.config, "idle_browser_timeout_seconds", 0) or 0)
+        idle_timeout = float(
+            getattr(self.config, "idle_browser_timeout_seconds", 0) or 0
+        )
         if idle_timeout <= 0:
             return await self.vehicle_queue.get()
         while True:
             try:
-                return await asyncio.wait_for(self.vehicle_queue.get(), timeout=idle_timeout)
+                return await asyncio.wait_for(
+                    self.vehicle_queue.get(), timeout=idle_timeout
+                )
             except asyncio.TimeoutError:
                 if browser.has_open_browser:
                     logger.info(
@@ -452,7 +500,9 @@ class VehicleDetailWorker:
                         exc,
                     )
                 else:
-                    logger.exception("%s failed vehicle %s: %s", self.name, job.vehicle_url, exc)
+                    logger.exception(
+                        "%s failed vehicle %s: %s", self.name, job.vehicle_url, exc
+                    )
                 await self.writer_queue.put(
                     {
                         "kind": "vehicle_failed",
@@ -472,36 +522,66 @@ class VehicleDetailWorker:
         await self.state.mark_vehicle_processing(job.vehicle_url, self.run_id)
         try:
             _increment_config_counter(self.config, "vehicle_detail_jobs_total")
-            detail_needed = should_fetch_vehicle_detail(self.config, job.vehicle_url, job.fallback)
-            _record_uc_popup_decision(self.config, job.vehicle_url, job.fallback, detail_needed)
+            detail_needed = should_fetch_vehicle_detail(
+                self.config, job.vehicle_url, job.fallback
+            )
+            _record_uc_popup_decision(
+                self.config, job.vehicle_url, job.fallback, detail_needed
+            )
             if not detail_needed:
                 _increment_config_counter(self.config, "detail_skipped_count")
-                vehicle = _vehicle_from_fallback(job.vendor_info, job.vehicle_url, job.fallback)
+                vehicle = _vehicle_from_fallback(
+                    job.vendor_info, job.vehicle_url, job.fallback
+                )
             else:
                 _increment_config_counter(self.config, "detail_needed_count")
                 _increment_config_counter(self.config, "detail_attempted_count")
                 if getattr(self.config, "detail_open_strategy", "") == "uc-popup":
                     _increment_config_counter(self.config, "uc_popup_attempted_count")
-                fallback = {**job.fallback, "source_vendor_url": job.normalized_vendor_url}
+                fallback = {
+                    **job.fallback,
+                    "source_vendor_url": job.normalized_vendor_url,
+                }
                 vehicle = await vehicle_scraper.scrape_vehicle(
                     job.vehicle_url,
                     job.vendor_info,
                     fallback,
                 )
                 status_code = _detail_status_code(browser, vehicle)
-                error_msg = getattr(browser, 'last_error', '')
-                is_blocked = (status_code in {403, 503}) or "blocked_or_503" in error_msg or "edgesuite" in error_msg.lower() or _detail_request_failed(browser, vehicle)
+                error_msg = getattr(browser, "last_error", "")
+                is_blocked = (
+                    (status_code in {403, 503})
+                    or "blocked_or_503" in error_msg
+                    or "edgesuite" in error_msg.lower()
+                    or _detail_request_failed(browser, vehicle)
+                )
 
                 if is_blocked:
-                    if (status_code in {403, 503}) or "blocked_or_503" in error_msg or "edgesuite" in error_msg.lower():
+                    if (
+                        (status_code in {403, 503})
+                        or "blocked_or_503" in error_msg
+                        or "edgesuite" in error_msg.lower()
+                    ):
                         if status_code == 403:
-                            _increment_config_counter(self.config, "detail_fetch_403_count")
+                            _increment_config_counter(
+                                self.config, "detail_fetch_403_count"
+                            )
                         if status_code == 503:
-                            _increment_config_counter(self.config, "detail_fetch_503_count")
-                        _increment_config_counter(self.config, "detail_fetch_failed_count")
-                        _increment_config_counter(self.config, "listing_fallback_used_count")
-                        _increment_config_counter(self.config, "detail_site_blocked_or_503_count")
-                        _increment_config_counter(self.config, "detail_browser_closed_after_failure_count")
+                            _increment_config_counter(
+                                self.config, "detail_fetch_503_count"
+                            )
+                        _increment_config_counter(
+                            self.config, "detail_fetch_failed_count"
+                        )
+                        _increment_config_counter(
+                            self.config, "listing_fallback_used_count"
+                        )
+                        _increment_config_counter(
+                            self.config, "detail_site_blocked_or_503_count"
+                        )
+                        _increment_config_counter(
+                            self.config, "detail_browser_closed_after_failure_count"
+                        )
                         try:
                             await browser.close()
                         except Exception:
@@ -509,7 +589,9 @@ class VehicleDetailWorker:
                     else:
                         _increment_config_counter(self.config, "detail_failed_count")
 
-                    failure_message = _detail_failure_message(browser, vehicle) or error_msg
+                    failure_message = (
+                        _detail_failure_message(browser, vehicle) or error_msg
+                    )
                     await self.writer_queue.put(
                         {
                             "kind": "error",
@@ -520,15 +602,26 @@ class VehicleDetailWorker:
                             "error_message": failure_message,
                             "fetch_strategy": vehicle.get("fetch_strategy", ""),
                             "browser": browser.config.browser,
-                            "error_type": "detail_site_blocked_or_503" if "edgesuite" in error_msg.lower() or status_code in {403, 503} else "detail_fetch_failed",
+                            "error_type": "detail_site_blocked_or_503"
+                            if "edgesuite" in error_msg.lower()
+                            or status_code in {403, 503}
+                            else "detail_fetch_failed",
                             "detail_open_strategy": self.config.detail_open_strategy,
                             "detail_status": vehicle.get("detail_status", ""),
-                            "detail_failure_reason": vehicle.get("detail_failure_reason", ""),
-                            "html_dump_path": vehicle.get("detail_artifact_html_path", ""),
-                            "screenshot_path": vehicle.get("detail_artifact_screenshot_path", ""),
+                            "detail_failure_reason": vehicle.get(
+                                "detail_failure_reason", ""
+                            ),
+                            "html_dump_path": vehicle.get(
+                                "detail_artifact_html_path", ""
+                            ),
+                            "screenshot_path": vehicle.get(
+                                "detail_artifact_screenshot_path", ""
+                            ),
                         }
                     )
-                    fallback_vehicle = _vehicle_from_fallback(job.vendor_info, job.vehicle_url, job.fallback)
+                    fallback_vehicle = _vehicle_from_fallback(
+                        job.vendor_info, job.vehicle_url, job.fallback
+                    )
                     _copy_detail_metadata(fallback_vehicle, vehicle)
                     vehicle = fallback_vehicle
                 else:
@@ -545,7 +638,9 @@ class VehicleDetailWorker:
                 browser.mark_unhealthy(str(exc))
                 raise
             else:
-                logger.exception("%s failed vehicle %s: %s", self.name, job.vehicle_url, exc)
+                logger.exception(
+                    "%s failed vehicle %s: %s", self.name, job.vehicle_url, exc
+                )
             await self.writer_queue.put(
                 {
                     "kind": "vehicle_failed",
@@ -580,14 +675,18 @@ async def run_concurrent_pipeline(
     await state.requeue_processing_jobs(run_id)
 
     vendor_queue: asyncio.Queue = asyncio.Queue(maxsize=config.vendor_concurrency * 2)
-    vehicle_queue: asyncio.Queue = asyncio.Queue(maxsize=config.vehicle_detail_concurrency * 4)
+    vehicle_queue: asyncio.Queue = asyncio.Queue(
+        maxsize=config.vehicle_detail_concurrency * 4
+    )
     writer_queue: asyncio.Queue = asyncio.Queue()
     expected_vehicles = (
         config.max_vendors * config.max_cars_per_vendor
         if config.max_vendors > 0 and config.max_cars_per_vendor > 0
         else 0
     )
-    writer = SingleWriter(state, writer_queue, run_id, config.flush_every, expected_vehicles)
+    writer = SingleWriter(
+        state, writer_queue, run_id, config.flush_every, expected_vehicles
+    )
     writer_task = asyncio.create_task(writer.run(), name="single-writer")
 
     vendor_workers = [
@@ -630,15 +729,23 @@ async def run_concurrent_pipeline(
 
         discovered_vendor_count = 0
         enqueued_vendor_count = 0
-        pending_vendors = await state.pending_vendor_jobs(run_id, limit=config.max_vendors)
+        pending_vendors = await state.pending_vendor_jobs(
+            run_id, limit=config.max_vendors
+        )
         if pending_vendors:
             for job in pending_vendors:
                 await vendor_queue.put(job)
             enqueued_vendor_count = len(pending_vendors)
             discovered_vendor_count = len(pending_vendors)
-            logger.info("Requeued %d pending vendor jobs for run_id=%s.", len(pending_vendors), run_id)
+            logger.info(
+                "Requeued %d pending vendor jobs for run_id=%s.",
+                len(pending_vendors),
+                run_id,
+            )
         else:
-            stats = await RegionalDiscoveryProducer(config, state, run_id, vendor_queue).run()
+            stats = await RegionalDiscoveryProducer(
+                config, state, run_id, vendor_queue
+            ).run()
             if stats is None:
                 enqueued_vendor_count = vendor_queue.qsize()
                 discovered_vendor_count = enqueued_vendor_count
@@ -681,7 +788,9 @@ async def run_concurrent_pipeline(
         await state.close()
 
 
-def _prepare_dealers(dealers: list[dict[str, str]], max_vendors: int) -> list[dict[str, str]]:
+def _prepare_dealers(
+    dealers: list[dict[str, str]], max_vendors: int
+) -> list[dict[str, str]]:
     by_url: dict[str, dict[str, str]] = {}
     for dealer in dealers:
         url = normalize_dealer_url(dealer.get("url", ""))
@@ -696,7 +805,9 @@ def _is_real_vehicle_detail_url(url: str) -> bool:
     return is_real_vehicle_detail_url(url)
 
 
-def _detail_request_failed(browser: BrowserManager, vehicle: dict[str, Any] | None = None) -> bool:
+def _detail_request_failed(
+    browser: BrowserManager, vehicle: dict[str, Any] | None = None
+) -> bool:
     status_code = _detail_status_code(browser, vehicle or {})
     if status_code in {403, 429, 500, 502, 503, 504}:
         return True
@@ -726,7 +837,9 @@ def _detail_request_failed(browser: BrowserManager, vehicle: dict[str, Any] | No
     return str(vehicle.get("detail_status", "")) in failed_statuses
 
 
-def _detail_status_code(browser: BrowserManager, vehicle: dict[str, Any] | None = None) -> int | None:
+def _detail_status_code(
+    browser: BrowserManager, vehicle: dict[str, Any] | None = None
+) -> int | None:
     status = browser.last_status
     if status:
         return int(status)
@@ -784,7 +897,9 @@ def _copy_detail_metadata(target: dict[str, Any], source: dict[str, Any]) -> Non
     target["vehicle_data_source"] = "listing_fallback"
 
 
-def _increment_config_counter(config: ScraperConfig, name: str, amount: int = 1) -> None:
+def _increment_config_counter(
+    config: ScraperConfig, name: str, amount: int = 1
+) -> None:
     setattr(config, name, int(getattr(config, name, 0) or 0) + amount)
 
 

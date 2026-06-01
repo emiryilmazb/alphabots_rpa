@@ -5,7 +5,11 @@ import pandas as pd
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.models import FINANCING_REQUIRED_FIELDS, VEHICLE_REQUIRED_FIELDS, VENDOR_COLUMNS
+from src.models import (
+    FINANCING_REQUIRED_FIELDS,
+    VEHICLE_REQUIRED_FIELDS,
+    VENDOR_COLUMNS,
+)
 from tools.validate_dashboard import validate_dashboard
 
 
@@ -20,10 +24,14 @@ def _write_workbook(
     vehicle_category="PKW",
     manufacturer_origin="Deutschland",
 ):
-    vendor_columns = [column for column in VENDOR_COLUMNS if column != missing_vendor_column]
+    vendor_columns = [
+        column for column in VENDOR_COLUMNS if column != missing_vendor_column
+    ]
     vehicle_columns = [
         column
-        for column in dict.fromkeys([*VEHICLE_REQUIRED_FIELDS, *FINANCING_REQUIRED_FIELDS])
+        for column in dict.fromkeys(
+            [*VEHICLE_REQUIRED_FIELDS, *FINANCING_REQUIRED_FIELDS]
+        )
         if column != missing_vehicle_column
     ]
     vehicle_data = {column: ["value"] * vehicle_rows for column in vehicle_columns}
@@ -32,15 +40,21 @@ def _write_workbook(
 
     with pd.ExcelWriter(excel_path) as writer:
         if missing_sheet != "Vendors":
-            pd.DataFrame({column: ["value"] * vendor_rows for column in vendor_columns}).to_excel(
+            pd.DataFrame(
+                {column: ["value"] * vendor_rows for column in vendor_columns}
+            ).to_excel(
                 writer,
                 sheet_name="Vendors",
                 index=False,
             )
         if missing_sheet != "Vehicles":
-            pd.DataFrame(vehicle_data).to_excel(writer, sheet_name="Vehicles", index=False)
+            pd.DataFrame(vehicle_data).to_excel(
+                writer, sheet_name="Vehicles", index=False
+            )
         if missing_sheet != "Run_Summary":
-            pd.DataFrame({"metric": ["a"], "value": [1]}).to_excel(writer, sheet_name="Run_Summary", index=False)
+            pd.DataFrame({"metric": ["a"], "value": [1]}).to_excel(
+                writer, sheet_name="Run_Summary", index=False
+            )
         if missing_sheet != "Data_Coverage":
             pd.DataFrame({"field": ["a"], "coverage_pct": [100]}).to_excel(
                 writer,
@@ -54,9 +68,13 @@ def _write_workbook(
                 index=False,
             )
         if missing_sheet != "Dashboard":
-            pd.DataFrame({"metric": ["a"], "value": [1]}).to_excel(writer, sheet_name="Dashboard", index=False)
+            pd.DataFrame({"metric": ["a"], "value": [1]}).to_excel(
+                writer, sheet_name="Dashboard", index=False
+            )
         if missing_sheet != "Errors":
-            pd.DataFrame(columns=["stage", "url", "error"]).to_excel(writer, sheet_name="Errors", index=False)
+            pd.DataFrame(columns=["stage", "url", "error"]).to_excel(
+                writer, sheet_name="Errors", index=False
+            )
 
 
 def test_validate_dashboard_186_vehicles_passes_without_exact_count(tmp_path):
@@ -73,7 +91,9 @@ def test_validate_dashboard_minimum_counts_pass(tmp_path):
     assert validate_dashboard(str(excel_path), min_vendors=25, min_vehicles=180) is True
 
 
-def test_validate_dashboard_exact_expected_vehicle_count_fails_only_when_requested(tmp_path):
+def test_validate_dashboard_exact_expected_vehicle_count_fails_only_when_requested(
+    tmp_path,
+):
     excel_path = tmp_path / "test_dashboard.xlsx"
     _write_workbook(excel_path, vehicle_rows=186)
 

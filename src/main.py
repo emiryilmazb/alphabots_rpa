@@ -29,7 +29,10 @@ from src.processing.classification import classify_dataframe
 from src.processing.cleaning import clean_dataframes
 from src.processing.dashboard import prepare_dashboard
 from src.scraper.browser import BrowserManager
-from src.scraper.detail_policy import is_real_vehicle_detail_url, should_fetch_vehicle_detail
+from src.scraper.detail_policy import (
+    is_real_vehicle_detail_url,
+    should_fetch_vehicle_detail,
+)
 from src.scraper.parsers import normalize_dealer_url
 from src.scraper.pipeline import run_concurrent_pipeline
 from src.scraper.regional_scraper import RegionalScraper
@@ -65,7 +68,11 @@ async def run_pipeline(config: ScraperConfig) -> None:
     global logger
     logger = get_logger("main")
 
-    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
+    run_id = (
+        datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        + "-"
+        + uuid.uuid4().hex[:8]
+    )
     started_at = datetime.now(timezone.utc)
     config.run_id = run_id
     config.ensure_dirs()
@@ -73,15 +80,19 @@ async def run_pipeline(config: ScraperConfig) -> None:
     if config.clear_checkpoints:
         checkpoint.clear_all()
 
-    bundesland = BUNDESLAND_MAP.get(config.state, config.state.replace("-", " ").title())
+    bundesland = BUNDESLAND_MAP.get(
+        config.state, config.state.replace("-", " ").title()
+    )
     errors: list[dict[str, Any]] = []
     dealers_data: list[dict[str, str]] = []
     vendors: list[dict[str, Any]] = []
     all_cars: list[dict[str, Any]] = []
 
-
     if not config.overwrite and "runs" in str(config.data_dir):
-        logger.warning("OVERWRITE GUARD: Existing files >50KB detected. Using run folder: %s", config.data_dir)
+        logger.warning(
+            "OVERWRITE GUARD: Existing files >50KB detected. Using run folder: %s",
+            config.data_dir,
+        )
     if config.process_existing:
         logger.info("=" * 60)
         logger.info("TASK 1: REPROCESSING EXISTING DATA (Skipping scrape)")
@@ -106,7 +117,9 @@ async def run_pipeline(config: ScraperConfig) -> None:
                 config.vehicle_detail_concurrency,
             )
             logger.info("=" * 60)
-            result = await run_concurrent_pipeline(config, run_id=run_id, bundesland=bundesland)
+            result = await run_concurrent_pipeline(
+                config, run_id=run_id, bundesland=bundesland
+            )
             vendors = result.vendors
             all_cars = result.vehicles
             config.regional_discovered_count = result.discovered_vendor_count
@@ -115,7 +128,11 @@ async def run_pipeline(config: ScraperConfig) -> None:
             errors.extend(_normalize_pipeline_errors(result.errors))
         except Exception as exc:
             logger.exception("SQLite pipeline scraping phase failed: %s", exc)
-            errors.append(_error_record(run_id, "pipeline", "", str(exc), error_type=exc.__class__.__name__))
+            errors.append(
+                _error_record(
+                    run_id, "pipeline", "", str(exc), error_type=exc.__class__.__name__
+                )
+            )
     else:
         vendors, all_cars = await _run_legacy_scraping(
             config,
@@ -158,7 +175,9 @@ async def run_pipeline(config: ScraperConfig) -> None:
     processed_csv = config.processed_dir / "cars_processed.csv"
     processed_json = config.processed_dir / "cars_processed.json"
     df_cars_classified.to_csv(processed_csv, index=False, encoding="utf-8-sig")
-    df_cars_classified.to_json(processed_json, orient="records", force_ascii=False, indent=2)
+    df_cars_classified.to_json(
+        processed_json, orient="records", force_ascii=False, indent=2
+    )
     logger.info("Processed vehicle data saved: %s", processed_csv)
 
     logger.info("=" * 60)
@@ -168,30 +187,52 @@ async def run_pipeline(config: ScraperConfig) -> None:
     finished_at = datetime.now(timezone.utc)
     errors = [_normalize_error_record(error, run_id) for error in errors]
     run_summary = _compute_run_summary(
-        run_id, started_at, finished_at, config,
-        df_vendors_clean, df_cars_raw, df_cars_classified, errors,
+        run_id,
+        started_at,
+        finished_at,
+        config,
+        df_vendors_clean,
+        df_cars_raw,
+        df_cars_classified,
+        errors,
     )
     vendor_coverage = _compute_field_coverage(df_vendors_clean, VENDOR_COLUMNS)
-    vehicle_coverage = _compute_field_coverage(df_cars_classified, list(df_cars_classified.columns))
+    vehicle_coverage = _compute_field_coverage(
+        df_cars_classified, list(df_cars_classified.columns)
+    )
 
     dashboard = prepare_dashboard(df_vendors_clean, df_cars_classified)
     output_guard_key = "_outputs_generated_for_run_id"
     outputs_generated = False
     if getattr(config, output_guard_key, "") == run_id:
-        logger.warning("Output generation already completed for run_id=%s; skipping duplicate generation.", run_id)
+        logger.warning(
+            "Output generation already completed for run_id=%s; skipping duplicate generation.",
+            run_id,
+        )
     else:
         setattr(config, output_guard_key, run_id)
         outputs_generated = True
         generate_excel(
-            config.excel_path, df_vendors_clean, df_cars_raw, df_cars_classified,
-            dashboard, run_summary=run_summary,
-            vendor_coverage=vendor_coverage, vehicle_coverage=vehicle_coverage,
+            config.excel_path,
+            df_vendors_clean,
+            df_cars_raw,
+            df_cars_classified,
+            dashboard,
+            run_summary=run_summary,
+            vendor_coverage=vendor_coverage,
+            vehicle_coverage=vehicle_coverage,
             errors=errors,
         )
         generate_word_report(
-            config.word_path, df_vendors_clean, df_cars_classified, dashboard,
-            config.state, errors, run_summary=run_summary,
-            vendor_coverage=vendor_coverage, vehicle_coverage=vehicle_coverage,
+            config.word_path,
+            df_vendors_clean,
+            df_cars_classified,
+            dashboard,
+            config.state,
+            errors,
+            run_summary=run_summary,
+            vendor_coverage=vendor_coverage,
+            vehicle_coverage=vehicle_coverage,
         )
         _save_errors(errors, config.output_dir)
 
@@ -226,7 +267,9 @@ async def _run_legacy_scraping(
         logger.info("Start URL: %s", config.state_page_url.format(page=0))
         logger.info("=" * 60)
 
-        dealers_data = await _load_or_collect_dealers(config, checkpoint, browser, errors)
+        dealers_data = await _load_or_collect_dealers(
+            config, checkpoint, browser, errors
+        )
         if not dealers_data and _should_retry_headed(config, browser):
             errors.append(
                 {
@@ -236,7 +279,9 @@ async def _run_legacy_scraping(
                 }
             )
             if not errors[-1]["error"]:
-                errors[-1]["error"] = "Headless browser was blocked by mobile.de site protection."
+                errors[-1]["error"] = (
+                    "Headless browser was blocked by mobile.de site protection."
+                )
             logger.warning(
                 "Headless mode was blocked by mobile.de site protection. "
                 "Restarting once in headed mode to collect deliverable data."
@@ -246,7 +291,9 @@ async def _run_legacy_scraping(
             config.headless = False
             browser = BrowserManager(config, role="legacy")
             await browser.start()
-            dealers_data = await _load_or_collect_dealers(config, checkpoint, browser, errors)
+            dealers_data = await _load_or_collect_dealers(
+                config, checkpoint, browser, errors
+            )
 
         dealers_data = _prepare_dealers(dealers_data, config.max_vendors)
 
@@ -269,11 +316,21 @@ async def _run_legacy_scraping(
                 bundesland,
                 errors,
             )
-            all_cars = await _scrape_vehicles(config, checkpoint, browser, vendors, errors)
+            all_cars = await _scrape_vehicles(
+                config, checkpoint, browser, vendors, errors
+            )
 
     except Exception as exc:
         logger.exception("Pipeline scraping phase failed: %s", exc)
-        errors.append(_error_record(config.run_id, "pipeline", "", str(exc), error_type=exc.__class__.__name__))
+        errors.append(
+            _error_record(
+                config.run_id,
+                "pipeline",
+                "",
+                str(exc),
+                error_type=exc.__class__.__name__,
+            )
+        )
     finally:
         await browser.close()
 
@@ -298,14 +355,24 @@ async def _load_or_collect_dealers(
         dealers = await regional.collect_dealer_entries()
     except Exception as exc:
         logger.exception("Regional scraper failed: %s", exc)
-        errors.append(_error_record(config.run_id, "regional", config.state_page_url.format(page=0), str(exc), error_type=exc.__class__.__name__))
+        errors.append(
+            _error_record(
+                config.run_id,
+                "regional",
+                config.state_page_url.format(page=0),
+                str(exc),
+                error_type=exc.__class__.__name__,
+            )
+        )
         return []
     if dealers:
         checkpoint.save("dealers", dealers)
     return dealers
 
 
-def _prepare_dealers(dealers: list[dict[str, str]], max_vendors: int) -> list[dict[str, str]]:
+def _prepare_dealers(
+    dealers: list[dict[str, str]], max_vendors: int
+) -> list[dict[str, str]]:
     by_url: dict[str, dict[str, str]] = {}
     for dealer in dealers:
         url = normalize_dealer_url(dealer.get("url", ""))
@@ -325,7 +392,11 @@ def _should_retry_headed(config: ScraperConfig, browser: BrowserManager) -> bool
     if not config.headless or not config.fallback_to_headed_on_block:
         return False
     last_error = (browser.last_error or "").lower()
-    return browser.last_status == 403 or "access denied" in last_error or "site protection" in last_error
+    return (
+        browser.last_status == 403
+        or "access denied" in last_error
+        or "site protection" in last_error
+    )
 
 
 async def _scrape_vendors(
@@ -339,7 +410,9 @@ async def _scrape_vendors(
     vendors: list[dict[str, Any]] = []
     loaded_vendors: list[dict[str, Any]] = []
     target_urls = {dealer["url"] for dealer in dealers_data}
-    id_by_url = {dealer["url"]: f"C{idx + 1:07d}" for idx, dealer in enumerate(dealers_data)}
+    id_by_url = {
+        dealer["url"]: f"C{idx + 1:07d}" for idx, dealer in enumerate(dealers_data)
+    }
 
     if config.resume and checkpoint.exists("vendors"):
         loaded_vendors = checkpoint.load("vendors") or []
@@ -352,9 +425,13 @@ async def _scrape_vendors(
             vendor["Händler ID"] = id_by_url.get(url, vendor.get("Händler ID", ""))
             vendors.append(vendor)
         vendors = _dedupe_vendors(vendors)
-        logger.info("Resumed %d vendors from checkpoint for current target set.", len(vendors))
+        logger.info(
+            "Resumed %d vendors from checkpoint for current target set.", len(vendors)
+        )
 
-    completed_urls = {normalize_dealer_url(v.get("Mobile.de_Links", "")) for v in vendors}
+    completed_urls = {
+        normalize_dealer_url(v.get("Mobile.de_Links", "")) for v in vendors
+    }
     vendor_scraper = VendorScraper(browser, config)
 
     new_since_checkpoint = 0
@@ -366,15 +443,22 @@ async def _scrape_vendors(
         try:
             vendor_data = await vendor_scraper.scrape_vendor(dealer, bundesland)
             vendor_data["Händler ID"] = haendler_id
-            vendor_data["Mobile.de_Links"] = normalize_dealer_url(vendor_data.get("Mobile.de_Links", url)) or url
+            vendor_data["Mobile.de_Links"] = (
+                normalize_dealer_url(vendor_data.get("Mobile.de_Links", url)) or url
+            )
             normalized_vendor_url = normalize_dealer_url(vendor_data["Mobile.de_Links"])
             vendor_data["Mobile.de_Links"] = normalized_vendor_url
             vendors.append(vendor_data)
             vendors = _dedupe_vendors(vendors)
             completed_urls.add(normalized_vendor_url)
             new_since_checkpoint += 1
-            if config.checkpoint_every > 0 and new_since_checkpoint >= config.checkpoint_every:
-                checkpoint.save("vendors", _merge_vendor_checkpoint(loaded_vendors, vendors))
+            if (
+                config.checkpoint_every > 0
+                and new_since_checkpoint >= config.checkpoint_every
+            ):
+                checkpoint.save(
+                    "vendors", _merge_vendor_checkpoint(loaded_vendors, vendors)
+                )
                 new_since_checkpoint = 0
             logger.info(
                 "[%d/%d] Vendor %s scraped: %s",
@@ -385,7 +469,15 @@ async def _scrape_vendors(
             )
         except Exception as exc:
             logger.exception("Error scraping vendor %s: %s", url, exc)
-            errors.append(_error_record(config.run_id, "vendor", url, str(exc), error_type=exc.__class__.__name__))
+            errors.append(
+                _error_record(
+                    config.run_id,
+                    "vendor",
+                    url,
+                    str(exc),
+                    error_type=exc.__class__.__name__,
+                )
+            )
         await browser.polite_delay()
 
     # Final checkpoint save after all vendors
@@ -410,7 +502,9 @@ def _dedupe_vendors(vendors: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _record_score(record: dict[str, Any]) -> int:
-    return sum(1 for value in record.values() if str(value).strip() not in {"", "None", "nan"})
+    return sum(
+        1 for value in record.values() if str(value).strip() not in {"", "None", "nan"}
+    )
 
 
 async def _scrape_vehicles(
@@ -425,12 +519,18 @@ async def _scrape_vehicles(
 
     all_cars: list[dict[str, Any]] = []
     loaded_cars: list[dict[str, Any]] = []
-    target_vendor_ids = {str(vendor.get("Händler ID", "")) for vendor in vendors if vendor.get("Händler ID")}
+    target_vendor_ids = {
+        str(vendor.get("Händler ID", ""))
+        for vendor in vendors
+        if vendor.get("Händler ID")
+    }
     if config.resume and checkpoint.exists("vehicles"):
         loaded_cars = checkpoint.load("vehicles") or []
         all_cars = [
-            car for car in loaded_cars
-            if not target_vendor_ids or str(car.get("Händler ID", "")) in target_vendor_ids
+            car
+            for car in loaded_cars
+            if not target_vendor_ids
+            or str(car.get("Händler ID", "")) in target_vendor_ids
         ]
         logger.info("Resumed %d vehicles from checkpoint.", len(all_cars))
 
@@ -439,7 +539,9 @@ async def _scrape_vehicles(
         checkpoint.get_completed_set("vendor_vehicles_done") if config.resume else set()
     )
     vehicle_scraper = VehicleScraper(browser, config)
-    detail_pages_disabled = config.skip_vehicle_details or config.detail_policy == "never"
+    detail_pages_disabled = (
+        config.skip_vehicle_details or config.detail_policy == "never"
+    )
     detail_failure_count = 0
     detail_disable_recorded = False
 
@@ -451,9 +553,19 @@ async def _scrape_vehicles(
         if vendor_url in completed_vendor_vehicles:
             continue
 
-        logger.info("Collecting vehicles for %s (%s).", vendor.get("Händlername", ""), haendler_id)
+        logger.info(
+            "Collecting vehicles for %s (%s).",
+            vendor.get("Händlername", ""),
+            haendler_id,
+        )
         if not await browser.safe_goto(vendor_url):
-            errors.append({"type": "vendor_vehicles", "url": vendor_url, **_browser_error_fields(browser)})
+            errors.append(
+                {
+                    "type": "vendor_vehicles",
+                    "url": vendor_url,
+                    **_browser_error_fields(browser),
+                }
+            )
             logger.warning("Cannot load vendor page for vehicles: %s", vendor_url)
             continue
 
@@ -471,16 +583,22 @@ async def _scrape_vehicles(
                 if vehicle_url in completed_vehicle_urls:
                     continue
                 try:
-                    fallback = vehicle_scraper.listing_summaries.get(vehicle_url, vehicle_entry)
+                    fallback = vehicle_scraper.listing_summaries.get(
+                        vehicle_url, vehicle_entry
+                    )
                     if not should_fetch_vehicle_detail(
                         config,
                         vehicle_url,
                         fallback,
                         temporarily_disabled=detail_pages_disabled,
                     ):
-                        car_data = _vehicle_from_fallback(vendor_info, vehicle_url, fallback)
+                        car_data = _vehicle_from_fallback(
+                            vendor_info, vehicle_url, fallback
+                        )
                     else:
-                        car_data = await vehicle_scraper.scrape_vehicle(vehicle_url, vendor_info, fallback)
+                        car_data = await vehicle_scraper.scrape_vehicle(
+                            vehicle_url, vendor_info, fallback
+                        )
                         if _detail_request_failed(browser):
                             detail_failure_count += 1
                             if (
@@ -513,8 +631,13 @@ async def _scrape_vehicles(
                     all_cars.append(car_data)
                     completed_vehicle_urls.add(vehicle_url)
                     new_since_checkpoint += 1
-                    if config.checkpoint_every > 0 and new_since_checkpoint >= config.checkpoint_every:
-                        checkpoint.save("vehicles", _merge_vehicle_checkpoint(loaded_cars, all_cars))
+                    if (
+                        config.checkpoint_every > 0
+                        and new_since_checkpoint >= config.checkpoint_every
+                    ):
+                        checkpoint.save(
+                            "vehicles", _merge_vehicle_checkpoint(loaded_cars, all_cars)
+                        )
                         logger.info(
                             "Checkpoint: %d vehicles saved (batch every %d).",
                             len(all_cars),
@@ -523,13 +646,29 @@ async def _scrape_vehicles(
                         new_since_checkpoint = 0
                 except Exception as exc:
                     logger.exception("Error scraping vehicle %s: %s", vehicle_url, exc)
-                    errors.append(_error_record(config.run_id, "vehicle", vehicle_url, str(exc), error_type=exc.__class__.__name__))
+                    errors.append(
+                        _error_record(
+                            config.run_id,
+                            "vehicle",
+                            vehicle_url,
+                            str(exc),
+                            error_type=exc.__class__.__name__,
+                        )
+                    )
                 await browser.polite_delay()
 
             checkpoint.add_completed("vendor_vehicles_done", vendor_url)
         except Exception as exc:
             logger.exception("Error processing vendor vehicles %s: %s", vendor_url, exc)
-            errors.append(_error_record(config.run_id, "vendor_vehicles", vendor_url, str(exc), error_type=exc.__class__.__name__))
+            errors.append(
+                _error_record(
+                    config.run_id,
+                    "vendor_vehicles",
+                    vendor_url,
+                    str(exc),
+                    error_type=exc.__class__.__name__,
+                )
+            )
 
     # Final checkpoint save after all vehicles
     if all_cars:
@@ -551,7 +690,9 @@ def _merge_vendor_checkpoint(
             continue
         vendor = {**vendor, "Mobile.de_Links": url}
         existing_vendor = by_url.get(url)
-        if existing_vendor is None or _record_score(vendor) >= _record_score(existing_vendor):
+        if existing_vendor is None or _record_score(vendor) >= _record_score(
+            existing_vendor
+        ):
             by_url[url] = vendor
     return sorted(by_url.values(), key=lambda item: item.get("Händler ID", ""))
 
@@ -660,9 +801,16 @@ def _finalize_vehicle_record(
     vehicle.setdefault("source_vendor_url", vendor_url)
     vehicle.setdefault("source_vehicle_url", vehicle_url)
     vehicle.setdefault("scraped_at", datetime.now(timezone.utc).isoformat())
-    vehicle.setdefault("parse_status", "ok" if _record_score(vehicle) > 4 else "partial")
-    vehicle.setdefault("vehicle_data_source", "detail_page" if vehicle.get("fetch_strategy") else "listing_payload")
-    vehicle.setdefault("fetch_strategy", vehicle.get("vehicle_data_source", "listing_payload"))
+    vehicle.setdefault(
+        "parse_status", "ok" if _record_score(vehicle) > 4 else "partial"
+    )
+    vehicle.setdefault(
+        "vehicle_data_source",
+        "detail_page" if vehicle.get("fetch_strategy") else "listing_payload",
+    )
+    vehicle.setdefault(
+        "fetch_strategy", vehicle.get("vehicle_data_source", "listing_payload")
+    )
     vehicle.setdefault("fetch_status", "")
     if vehicle.get("Financing") and not vehicle.get("Finanzierung"):
         vehicle["Finanzierung"] = vehicle["Financing"]
@@ -733,7 +881,9 @@ def _records_to_df(records: list[dict[str, Any]], columns: list[str]) -> pd.Data
     return df[columns + remaining]
 
 
-def _save_records(records: list[dict[str, Any]], base_path: Path, columns: list[str]) -> None:
+def _save_records(
+    records: list[dict[str, Any]], base_path: Path, columns: list[str]
+) -> None:
     base_path.parent.mkdir(parents=True, exist_ok=True)
     df = _records_to_df(records, columns)
     df.to_csv(base_path.with_suffix(".csv"), index=False, encoding="utf-8-sig")
@@ -789,23 +939,67 @@ def _compute_required_coverage_metrics(
     df_vendors: pd.DataFrame,
     df_cars_processed: pd.DataFrame,
 ) -> dict[str, float]:
-    vendor_present, vendor_total = _coverage_counts_for_fields(df_vendors, VENDOR_COLUMNS)
-    basic_present, basic_total = _coverage_counts_for_fields(df_cars_processed, VEHICLE_BASIC_FIELDS)
-    technical_present, technical_total = _coverage_counts_for_fields(df_cars_processed, VEHICLE_TECHNICAL_FIELDS)
-    financing_present, financing_total = _coverage_counts_for_fields(df_cars_processed, FINANCING_REQUIRED_FIELDS)
+    vendor_present, vendor_total = _coverage_counts_for_fields(
+        df_vendors, VENDOR_COLUMNS
+    )
+    basic_present, basic_total = _coverage_counts_for_fields(
+        df_cars_processed, VEHICLE_BASIC_FIELDS
+    )
+    technical_present, technical_total = _coverage_counts_for_fields(
+        df_cars_processed, VEHICLE_TECHNICAL_FIELDS
+    )
+    financing_present, financing_total = _coverage_counts_for_fields(
+        df_cars_processed, FINANCING_REQUIRED_FIELDS
+    )
     classification_present, classification_total = _coverage_counts_for_fields(
         df_cars_processed,
         CLASSIFICATION_REQUIRED_FIELDS,
     )
-    final_present = vendor_present + basic_present + technical_present + financing_present + classification_present
-    final_total = vendor_total + basic_total + technical_total + financing_total + classification_total
+    final_present = (
+        vendor_present
+        + basic_present
+        + technical_present
+        + financing_present
+        + classification_present
+    )
+    final_total = (
+        vendor_total
+        + basic_total
+        + technical_total
+        + financing_total
+        + classification_total
+    )
     return {
-        "vendor_required_fields_coverage_pct": round((vendor_present / vendor_total) * 100, 2) if vendor_total else 0.0,
-        "vehicle_basic_fields_coverage_pct": round((basic_present / basic_total) * 100, 2) if basic_total else 0.0,
-        "vehicle_technical_fields_coverage_pct": round((technical_present / technical_total) * 100, 2) if technical_total else 0.0,
-        "financing_fields_coverage_pct": round((financing_present / financing_total) * 100, 2) if financing_total else 0.0,
-        "classification_fields_coverage_pct": round((classification_present / classification_total) * 100, 2) if classification_total else 0.0,
-        "final_required_fields_coverage_pct": round((final_present / final_total) * 100, 2) if final_total else 0.0,
+        "vendor_required_fields_coverage_pct": round(
+            (vendor_present / vendor_total) * 100, 2
+        )
+        if vendor_total
+        else 0.0,
+        "vehicle_basic_fields_coverage_pct": round(
+            (basic_present / basic_total) * 100, 2
+        )
+        if basic_total
+        else 0.0,
+        "vehicle_technical_fields_coverage_pct": round(
+            (technical_present / technical_total) * 100, 2
+        )
+        if technical_total
+        else 0.0,
+        "financing_fields_coverage_pct": round(
+            (financing_present / financing_total) * 100, 2
+        )
+        if financing_total
+        else 0.0,
+        "classification_fields_coverage_pct": round(
+            (classification_present / classification_total) * 100, 2
+        )
+        if classification_total
+        else 0.0,
+        "final_required_fields_coverage_pct": round(
+            (final_present / final_total) * 100, 2
+        )
+        if final_total
+        else 0.0,
     }
 
 
@@ -824,16 +1018,32 @@ def _compute_run_summary(
     errors: list[dict[str, Any]],
 ) -> dict[str, Any]:
     duration = finished_at - started_at
-    vendor_error_count = sum(1 for e in errors if str(e.get("stage") or e.get("type", "")).startswith("vendor"))
-    vehicle_error_count = sum(1 for e in errors if str(e.get("stage") or e.get("type", "")).startswith("vehicle"))
-    mode_str = "process_existing" if getattr(config, "process_existing", False) else "scrape"
+    vendor_error_count = sum(
+        1
+        for e in errors
+        if str(e.get("stage") or e.get("type", "")).startswith("vendor")
+    )
+    vehicle_error_count = sum(
+        1
+        for e in errors
+        if str(e.get("stage") or e.get("type", "")).startswith("vehicle")
+    )
+    mode_str = (
+        "process_existing" if getattr(config, "process_existing", False) else "scrape"
+    )
     extracted_count = len(df_cars_processed)
     avg_sec = duration.total_seconds() / extracted_count if extracted_count > 0 else 0
-    veh_per_hour = (extracted_count / duration.total_seconds()) * 3600 if duration.total_seconds() > 0 else 0
+    veh_per_hour = (
+        (extracted_count / duration.total_seconds()) * 3600
+        if duration.total_seconds() > 0
+        else 0
+    )
     est_20k = 20000 / veh_per_hour if veh_per_hour > 0 else 0
     detail_errors = [
-        error for error in errors
-        if str(error.get("stage") or error.get("type", "")) == "vehicle_detail_fetch_failed"
+        error
+        for error in errors
+        if str(error.get("stage") or error.get("type", ""))
+        == "vehicle_detail_fetch_failed"
     ]
     detail_fetch_403_count = sum(
         1
@@ -856,7 +1066,9 @@ def _compute_run_summary(
             .sum()
         )
     coverage_metrics = _compute_required_coverage_metrics(df_vendors, df_cars_processed)
-    detail_site_blocked_or_503_count = int(getattr(config, "detail_site_blocked_or_503_count", 0) or 0)
+    detail_site_blocked_or_503_count = int(
+        getattr(config, "detail_site_blocked_or_503_count", 0) or 0
+    )
     if not detail_site_blocked_or_503_count:
         detail_site_blocked_or_503_count = sum(
             1
@@ -880,7 +1092,11 @@ def _compute_run_summary(
 
     adaptive_wait_used_count = int(getattr(config, "adaptive_wait_used_count", 0) or 0)
     adaptive_wait_total_ms = int(getattr(config, "adaptive_wait_total_ms", 0) or 0)
-    adaptive_wait_avg_ms = adaptive_wait_total_ms / adaptive_wait_used_count if adaptive_wait_used_count > 0 else 0.0
+    adaptive_wait_avg_ms = (
+        adaptive_wait_total_ms / adaptive_wait_used_count
+        if adaptive_wait_used_count > 0
+        else 0.0
+    )
 
     summary_dict = {
         "run_id": run_id,
@@ -888,9 +1104,15 @@ def _compute_run_summary(
         "finished_at_utc": finished_at.isoformat(),
         "duration_seconds": round(duration.total_seconds(), 2),
         "adaptive_wait_used_count": adaptive_wait_used_count,
-        "adaptive_wait_success_count": int(getattr(config, "adaptive_wait_success_count", 0) or 0),
-        "adaptive_wait_timeout_count": int(getattr(config, "adaptive_wait_timeout_count", 0) or 0),
-        "adaptive_wait_error_count": int(getattr(config, "adaptive_wait_error_count", 0) or 0),
+        "adaptive_wait_success_count": int(
+            getattr(config, "adaptive_wait_success_count", 0) or 0
+        ),
+        "adaptive_wait_timeout_count": int(
+            getattr(config, "adaptive_wait_timeout_count", 0) or 0
+        ),
+        "adaptive_wait_error_count": int(
+            getattr(config, "adaptive_wait_error_count", 0) or 0
+        ),
         "adaptive_wait_total_ms": adaptive_wait_total_ms,
         "adaptive_wait_avg_ms": round(adaptive_wait_avg_ms, 2),
         "adaptive_wait_max_ms": int(getattr(config, "adaptive_wait_max_ms", 0) or 0),
@@ -906,9 +1128,15 @@ def _compute_run_summary(
         "detail_open_strategy": str(getattr(config, "detail_open_strategy", "")),
         "vendor_concurrency": config.vendor_concurrency,
         "vehicle_detail_concurrency": config.vehicle_detail_concurrency,
-        "regional_discovered_count": int(getattr(config, "regional_discovered_count", 0) or len(df_vendors)),
-        "discovered_vendor_count": int(getattr(config, "regional_discovered_count", 0) or len(df_vendors)),
-        "enqueued_vendor_count": int(getattr(config, "enqueued_vendor_count", 0) or len(df_vendors)),
+        "regional_discovered_count": int(
+            getattr(config, "regional_discovered_count", 0) or len(df_vendors)
+        ),
+        "discovered_vendor_count": int(
+            getattr(config, "regional_discovered_count", 0) or len(df_vendors)
+        ),
+        "enqueued_vendor_count": int(
+            getattr(config, "enqueued_vendor_count", 0) or len(df_vendors)
+        ),
         "processed_vendor_count": len(df_vendors),
         "extracted_vehicle_count": extracted_count,
         "error_count": len(errors),
@@ -917,27 +1145,61 @@ def _compute_run_summary(
         "detail_fetch_503_count": detail_fetch_503_count,
         "detail_fetch_failed_count": len(detail_errors),
         "detail_site_blocked_or_503_count": detail_site_blocked_or_503_count,
-        "vehicle_detail_jobs_total": int(getattr(config, "vehicle_detail_jobs_total", 0) or 0),
+        "vehicle_detail_jobs_total": int(
+            getattr(config, "vehicle_detail_jobs_total", 0) or 0
+        ),
         "detail_needed_count": int(getattr(config, "detail_needed_count", 0) or 0),
         "detail_skipped_count": int(getattr(config, "detail_skipped_count", 0) or 0),
-        "detail_attempted_count": int(getattr(config, "detail_attempted_count", 0) or 0),
+        "detail_attempted_count": int(
+            getattr(config, "detail_attempted_count", 0) or 0
+        ),
         "detail_success_count": int(getattr(config, "detail_success_count", 0) or 0),
-        "detail_failed_count": int(getattr(config, "detail_failed_count", 0) or len(detail_errors)),
+        "detail_failed_count": int(
+            getattr(config, "detail_failed_count", 0) or len(detail_errors)
+        ),
         "listing_fallback_used_count": listing_fallback_used_count,
-        "cookie_modal_visible_count": int(getattr(config, "cookie_modal_visible_count", 0) or 0),
-        "cookie_consent_click_count": int(getattr(config, "cookie_consent_click_count", 0) or 0),
-        "cookie_modal_remaining_count": int(getattr(config, "cookie_modal_remaining_count", 0) or 0),
-        "playwright_browser_opened_count": int(getattr(config, "playwright_browser_opened_count", 0) or 0),
-        "regional_browser_opened_count": int(getattr(config, "regional_browser_opened_count", 0) or 0),
-        "vendor_browser_opened_count": int(getattr(config, "vendor_browser_opened_count", 0) or 0),
-        "vehicle_detail_browser_opened_count": int(getattr(config, "vehicle_detail_browser_opened_count", 0) or 0),
-        "active_playwright_browser_count": int(getattr(config, "active_playwright_browser_count", 0) or 0),
-        "max_active_playwright_browser_count": int(getattr(config, "max_active_playwright_browser_count", 0) or 0),
-        "idle_about_blank_count": int(getattr(config, "idle_about_blank_count", 0) or 0),
-        "host_chrome_cdp_used_count": int(getattr(config, "host_chrome_cdp_used_count", 0) or 0),
-        "host_chrome_cdp_success_count": int(getattr(config, "host_chrome_cdp_success_count", 0) or 0),
-        "host_chrome_cdp_failed_count": int(getattr(config, "host_chrome_cdp_failed_count", 0) or 0),
-        "host_chrome_cdp_blocked_count": int(getattr(config, "host_chrome_cdp_blocked_count", 0) or 0),
+        "cookie_modal_visible_count": int(
+            getattr(config, "cookie_modal_visible_count", 0) or 0
+        ),
+        "cookie_consent_click_count": int(
+            getattr(config, "cookie_consent_click_count", 0) or 0
+        ),
+        "cookie_modal_remaining_count": int(
+            getattr(config, "cookie_modal_remaining_count", 0) or 0
+        ),
+        "playwright_browser_opened_count": int(
+            getattr(config, "playwright_browser_opened_count", 0) or 0
+        ),
+        "regional_browser_opened_count": int(
+            getattr(config, "regional_browser_opened_count", 0) or 0
+        ),
+        "vendor_browser_opened_count": int(
+            getattr(config, "vendor_browser_opened_count", 0) or 0
+        ),
+        "vehicle_detail_browser_opened_count": int(
+            getattr(config, "vehicle_detail_browser_opened_count", 0) or 0
+        ),
+        "active_playwright_browser_count": int(
+            getattr(config, "active_playwright_browser_count", 0) or 0
+        ),
+        "max_active_playwright_browser_count": int(
+            getattr(config, "max_active_playwright_browser_count", 0) or 0
+        ),
+        "idle_about_blank_count": int(
+            getattr(config, "idle_about_blank_count", 0) or 0
+        ),
+        "host_chrome_cdp_used_count": int(
+            getattr(config, "host_chrome_cdp_used_count", 0) or 0
+        ),
+        "host_chrome_cdp_success_count": int(
+            getattr(config, "host_chrome_cdp_success_count", 0) or 0
+        ),
+        "host_chrome_cdp_failed_count": int(
+            getattr(config, "host_chrome_cdp_failed_count", 0) or 0
+        ),
+        "host_chrome_cdp_blocked_count": int(
+            getattr(config, "host_chrome_cdp_blocked_count", 0) or 0
+        ),
         "avg_seconds_per_vehicle": round(avg_sec, 2),
         "vehicles_per_hour": round(veh_per_hour, 2),
         "estimated_hours_for_20000_vehicles": round(est_20k, 2),
@@ -948,9 +1210,11 @@ def _compute_run_summary(
         bench_file = config.output_dir / "benchmark_summary.json"
         bench_file.parent.mkdir(parents=True, exist_ok=True)
         import json as _json
+
         with open(bench_file, "w", encoding="utf-8") as f:
             _json.dump(summary_dict, f, indent=2)
         import logging
+
         logging.getLogger("mobile_de.main").info("=== BENCHMARK RESULT ===")
         logging.getLogger("mobile_de.main").info(_json.dumps(summary_dict, indent=2))
 
@@ -986,7 +1250,9 @@ def _save_errors(errors: list[dict[str, Any]], output_dir: Path) -> None:
     remaining = [column for column in df.columns if column not in columns]
     df[columns + remaining].to_csv(csv_path, index=False, encoding="utf-8-sig")
     if errors:
-        logger.warning("Errors saved: %s and %s (%d errors)", errors_path, csv_path, len(errors))
+        logger.warning(
+            "Errors saved: %s and %s (%d errors)", errors_path, csv_path, len(errors)
+        )
 
 
 def main() -> None:

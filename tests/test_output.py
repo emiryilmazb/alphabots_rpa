@@ -17,7 +17,13 @@ from src.output.word_report import generate_word_report
 def test_excel_includes_phase1_summary_sheets_and_finanzierung_alias(tmp_path):
     path = tmp_path / "dashboard.xlsx"
     vendors = pd.DataFrame(
-        [{"Händler ID": "C0000001", "Händlername": "Demo Händler", "Mobile.de_Links": "https://home.mobile.de/DEMO"}]
+        [
+            {
+                "Händler ID": "C0000001",
+                "Händlername": "Demo Händler",
+                "Mobile.de_Links": "https://home.mobile.de/DEMO",
+            }
+        ]
     )
     cars = pd.DataFrame(
         [
@@ -47,10 +53,24 @@ def test_excel_includes_phase1_summary_sheets_and_finanzierung_alias(tmp_path):
         dashboard,
         run_summary={"run_id": "test-run", "vendors": 1, "vehicles_raw": 1},
         vendor_coverage=pd.DataFrame(
-            [{"field": "Händlername", "non_empty_count": 1, "total_count": 1, "coverage_pct": 100.0}]
+            [
+                {
+                    "field": "Händlername",
+                    "non_empty_count": 1,
+                    "total_count": 1,
+                    "coverage_pct": 100.0,
+                }
+            ]
         ),
         vehicle_coverage=pd.DataFrame(
-            [{"field": "Financing", "non_empty_count": 1, "total_count": 1, "coverage_pct": 100.0}]
+            [
+                {
+                    "field": "Financing",
+                    "non_empty_count": 1,
+                    "total_count": 1,
+                    "coverage_pct": 100.0,
+                }
+            ]
         ),
         errors=[{"type": "vehicle", "url": "https://example.test", "error": "boom"}],
     )
@@ -104,12 +124,31 @@ def test_word_report_accepts_phase1_summary_inputs(tmp_path):
         {},
         "nordrhein-westfalen",
         [],
-        run_summary={"run_id": "test-run", "vendors": 1, "vehicles_raw": 1, "errors": 0},
+        run_summary={
+            "run_id": "test-run",
+            "vendors": 1,
+            "vehicles_raw": 1,
+            "errors": 0,
+        },
         vendor_coverage=pd.DataFrame(
-            [{"field": "Händler ID", "non_empty_count": 1, "total_count": 1, "coverage_pct": 100.0}]
+            [
+                {
+                    "field": "Händler ID",
+                    "non_empty_count": 1,
+                    "total_count": 1,
+                    "coverage_pct": 100.0,
+                }
+            ]
         ),
         vehicle_coverage=pd.DataFrame(
-            [{"field": "Vehicle_URL", "non_empty_count": 1, "total_count": 1, "coverage_pct": 100.0}]
+            [
+                {
+                    "field": "Vehicle_URL",
+                    "non_empty_count": 1,
+                    "total_count": 1,
+                    "coverage_pct": 100.0,
+                }
+            ]
         ),
     )
 
@@ -119,12 +158,17 @@ def test_word_report_accepts_phase1_summary_inputs(tmp_path):
     assert "Schema completeness is guaranteed; source completeness is measured." in text
     assert "Manufacturer grouping follows the task-defined categories" in text
     assert "Unavailable source values are not guessed." in text
-    assert '15. Run Summary' in text
-    assert "These values are not guessed and are reported transparently in Data_Coverage and Requirements_Compliance." in text
+    assert "15. Run Summary" in text
+    assert (
+        "These values are not guessed and are reported transparently in Data_Coverage and Requirements_Compliance."
+        in text
+    )
     assert "test-run" in text
 
 
-def test_run_summary_distinguishes_discovered_enqueued_processed_and_detail_failures(tmp_path):
+def test_run_summary_distinguishes_discovered_enqueued_processed_and_detail_failures(
+    tmp_path,
+):
     config = ScraperConfig(project_root=tmp_path, max_vendors=5)
     config.regional_discovered_count = 32
     config.enqueued_vendor_count = 5

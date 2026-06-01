@@ -4,14 +4,9 @@ import logging
 import re
 from collections.abc import Iterator
 from typing import Any
-from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
-from bs4 import BeautifulSoup, Tag
-import json
-import re
-import logging
-from typing import Any, Dict, List, Optional, Iterator, Union
-from bs4 import BeautifulSoup, Tag
-from src.scraper.parser_modules.normalization import clean_text, normalize_dealer_url, normalize_vehicle_url, dealer_identifier
+from typing import Iterator
+from src.scraper.parser_modules.normalization import clean_text
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,6 +46,7 @@ def extract_next_payloads(html: str) -> list[Any]:
                     pass
     return payloads
 
+
 def walk_json(value: Any) -> Iterator[Any]:
     """Yield every nested JSON-like value."""
     yield value
@@ -61,14 +57,17 @@ def walk_json(value: Any) -> Iterator[Any]:
         for child in value:
             yield from walk_json(child)
 
+
 def iter_dicts(value: Any) -> Iterator[dict[str, Any]]:
     for item in walk_json(value):
         if isinstance(item, dict):
             yield item
 
+
 def _none_if_placeholder(value: Any) -> str:
     text = clean_text(value)
     return "" if text in {"$undefined", "undefined", "None", "null"} else text
+
 
 def _first_present(*values: Any) -> str:
     for value in values:

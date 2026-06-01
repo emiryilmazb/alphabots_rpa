@@ -2,17 +2,16 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Iterator
 from typing import Any
-from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
-from bs4 import BeautifulSoup, Tag
-import json
-import re
-import logging
-from typing import Any, Dict, List, Optional, Iterator, Union
-from bs4 import BeautifulSoup, Tag
-from src.scraper.parser_modules.normalization import clean_text, normalize_dealer_url, normalize_vehicle_url, dealer_identifier
-from src.scraper.parser_modules.common import walk_json, iter_dicts, _none_if_placeholder, extract_next_payloads, _first_present
+from bs4 import BeautifulSoup
+from src.scraper.parser_modules.normalization import clean_text, normalize_dealer_url
+from src.scraper.parser_modules.common import (
+    iter_dicts,
+    _none_if_placeholder,
+    extract_next_payloads,
+    _first_present,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,10 +41,13 @@ def parse_vendor_json_ld(html: str) -> dict[str, Any]:
                     result["plz"] = _none_if_placeholder(addr.get("postalCode"))
                     result["city"] = _none_if_placeholder(addr.get("addressLocality"))
                     result["region"] = _none_if_placeholder(addr.get("addressRegion"))
-                    result["country"] = _country_name(_none_if_placeholder(addr.get("addressCountry")))
+                    result["country"] = _country_name(
+                        _none_if_placeholder(addr.get("addressCountry"))
+                    )
                 return result
 
     return result
+
 
 def parse_vendor_next_data(html: str) -> dict[str, Any]:
     """Extract dealerData/dealerHomepageData from mobile.de's Next payloads."""
@@ -54,19 +56,39 @@ def parse_vendor_next_data(html: str) -> dict[str, Any]:
         for obj in iter_dicts(payload):
             if "dealerData" not in obj:
                 continue
-            dealer = obj.get("dealerData") if isinstance(obj.get("dealerData"), dict) else {}
-            homepage = obj.get("dealerHomepageData") if isinstance(obj.get("dealerHomepageData"), dict) else {}
+            dealer = (
+                obj.get("dealerData") if isinstance(obj.get("dealerData"), dict) else {}
+            )
+            homepage = (
+                obj.get("dealerHomepageData")
+                if isinstance(obj.get("dealerHomepageData"), dict)
+                else {}
+            )
             if not dealer:
                 continue
 
-            location = dealer.get("location") if isinstance(dealer.get("location"), dict) else {}
-            legal = dealer.get("legalData") if isinstance(dealer.get("legalData"), dict) else {}
-            phones = dealer.get("phoneNumbers") if isinstance(dealer.get("phoneNumbers"), dict) else {}
+            location = (
+                dealer.get("location")
+                if isinstance(dealer.get("location"), dict)
+                else {}
+            )
+            legal = (
+                dealer.get("legalData")
+                if isinstance(dealer.get("legalData"), dict)
+                else {}
+            )
+            phones = (
+                dealer.get("phoneNumbers")
+                if isinstance(dealer.get("phoneNumbers"), dict)
+                else {}
+            )
 
             result.update(
                 {
                     "customer_id": _none_if_placeholder(dealer.get("customerId")),
-                    "unique_identifier": _none_if_placeholder(dealer.get("uniqueIdentifier")),
+                    "unique_identifier": _none_if_placeholder(
+                        dealer.get("uniqueIdentifier")
+                    ),
                     "name": _none_if_placeholder(dealer.get("name")),
                     "street": _none_if_placeholder(location.get("street")),
                     "plz": _none_if_placeholder(location.get("zipcode")),
@@ -77,9 +99,13 @@ def parse_vendor_next_data(html: str) -> dict[str, Any]:
                         location.get("federalState"),
                         location.get("addressRegion"),
                     ),
-                    "country": _country_name(_none_if_placeholder(location.get("country"))),
+                    "country": _country_name(
+                        _none_if_placeholder(location.get("country"))
+                    ),
                     "email": _none_if_placeholder(dealer.get("email")),
-                    "url": normalize_dealer_url(_none_if_placeholder(dealer.get("homepageUrl"))),
+                    "url": normalize_dealer_url(
+                        _none_if_placeholder(dealer.get("homepageUrl"))
+                    ),
                     "homepage": _first_present(
                         dealer.get("externalHomepageUrl"),
                         homepage.get("userDefinedLink"),
@@ -93,6 +119,7 @@ def parse_vendor_next_data(html: str) -> dict[str, Any]:
             _apply_imprint_values(result)
             return result
     return result
+
 
 def _country_name(country: str) -> str:
     normalized = country.upper()
@@ -109,6 +136,7 @@ def _country_name(country: str) -> str:
     if normalized in {"AT", "AUT", "AUSTRIA", "ÖSTERREICH", "OESTERREICH"}:
         return "Österreich"
     return country or ""
+
 
 def _extract_phones_from_next(phones: dict[str, Any]) -> dict[str, str]:
     mapping = {
@@ -129,6 +157,7 @@ def _extract_phones_from_next(phones: dict[str, Any]) -> dict[str, str]:
             values[field] = formatted
     return values
 
+
 def _format_phone_dict(value: dict[str, Any]) -> str:
     intl = _none_if_placeholder(value.get("internationalPrefix"))
     prefix = _none_if_placeholder(value.get("prefix"))
@@ -141,6 +170,7 @@ def _format_phone_dict(value: dict[str, Any]) -> str:
             return f"+{normalized}"
         return normalized
     return clean_text(f"{prefix} {number}") if prefix or number else ""
+
 
 def _apply_imprint_values(result: dict[str, Any]) -> None:
     imprint = result.get("imprint", "")
@@ -158,6 +188,7 @@ def _apply_imprint_values(result: dict[str, Any]) -> None:
         m = re.search(r"\bTelefon(?:\.|:)?\s*([+\d][+\d\s()./-]{5,})", imprint, re.I)
         if m:
             result["Telephone Number"] = clean_text(m.group(1))
+
 
 def parse_vendor_vehicle_count(html: str) -> int | None:
     """Extract the total vehicle count from a dealer page."""
@@ -184,7 +215,11 @@ def parse_vendor_vehicle_count(html: str) -> int | None:
     soup = BeautifulSoup(html, "lxml")
     for elem in soup.find_all(["h1", "h2", "h3", "div", "span"]):
         text = clean_text(elem.get_text(" ", strip=True))
-        match = re.search(r"\b(\d{1,6})\s+(?:Fahrzeuge|Angebote|Pkw|Lkw|Auflieger|Anhänger)\b", text, re.I)
+        match = re.search(
+            r"\b(\d{1,6})\s+(?:Fahrzeuge|Angebote|Pkw|Lkw|Auflieger|Anhänger)\b",
+            text,
+            re.I,
+        )
         if match:
             return int(match.group(1))
     return None

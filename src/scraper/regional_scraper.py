@@ -50,14 +50,24 @@ class RegionalScraper:
 
         while True:
             # Check page limit
-            if (self.config.max_pages_per_state > 0 and page_num >= self.config.max_pages_per_state) or (getattr(self.config, "max_regional_pages", 0) > 0 and page_num >= getattr(self.config, "max_regional_pages", 0)):
-                logger.info("Page limit reached (%d pages).", self.config.max_pages_per_state)
+            if (
+                self.config.max_pages_per_state > 0
+                and page_num >= self.config.max_pages_per_state
+            ) or (
+                getattr(self.config, "max_regional_pages", 0) > 0
+                and page_num >= getattr(self.config, "max_regional_pages", 0)
+            ):
+                logger.info(
+                    "Page limit reached (%d pages).", self.config.max_pages_per_state
+                )
                 break
 
             url = self.config.state_page_url.format(page=page_num)
             logger.info("Scraping regional page %d: %s", page_num, url)
 
-            result = await self.fetch_manager.fetch(url, validator=self._validate_regional_static)
+            result = await self.fetch_manager.fetch(
+                url, validator=self._validate_regional_static
+            )
             if not result.ok:
                 logger.warning(
                     "Failed to load regional page %d (%s). Stopping pagination.",
@@ -69,13 +79,20 @@ class RegionalScraper:
             if result.strategy.startswith("playwright"):
                 consecutive_fallback_failures += 1
                 if consecutive_fallback_failures >= MAX_CONSECUTIVE_FALLBACKS:
-                    logger.warning("Reached %d consecutive Playwright fallbacks. Stopping runaway pagination.", consecutive_fallback_failures)
+                    logger.warning(
+                        "Reached %d consecutive Playwright fallbacks. Stopping runaway pagination.",
+                        consecutive_fallback_failures,
+                    )
                     break
                 # Wait briefly for either rendered dealer links or the empty page state.
                 try:
-                    await self.browser.page.wait_for_load_state("networkidle", timeout=10000)
+                    await self.browser.page.wait_for_load_state(
+                        "networkidle", timeout=10000
+                    )
                 except Exception:
-                    logger.debug("Network idle wait timed out on regional page %d.", page_num)
+                    logger.debug(
+                        "Network idle wait timed out on regional page %d.", page_num
+                    )
                 html = await self.browser.get_page_html()
             else:
                 consecutive_fallback_failures = 0
@@ -101,14 +118,26 @@ class RegionalScraper:
                     self.last_enqueued_count = len(all_dealers)
                     new_count += 1
 
-            logger.info("Page %d: found %d dealers (%d new, %d total)",
-                        page_num, len(dealers), new_count, len(all_dealers))
+            logger.info(
+                "Page %d: found %d dealers (%d new, %d total)",
+                page_num,
+                len(dealers),
+                new_count,
+                len(all_dealers),
+            )
 
             if new_count == 0:
                 consecutive_empty_pages += 1
-                logger.info("Page %d yielded no new dealers. (Consecutive: %d)", page_num, consecutive_empty_pages)
+                logger.info(
+                    "Page %d yielded no new dealers. (Consecutive: %d)",
+                    page_num,
+                    consecutive_empty_pages,
+                )
                 if consecutive_empty_pages >= MAX_CONSECUTIVE_EMPTY:
-                    logger.info("Reached %d consecutive empty/no-new-dealer pages. Stopping.", consecutive_empty_pages)
+                    logger.info(
+                        "Reached %d consecutive empty/no-new-dealer pages. Stopping.",
+                        consecutive_empty_pages,
+                    )
                     break
             else:
                 consecutive_empty_pages = 0
@@ -116,10 +145,13 @@ class RegionalScraper:
             page_num += 1
             await self.browser.polite_delay()
 
-
         if self.config.max_vendors > 0 and len(all_dealers) > self.config.max_vendors:
-            logger.info("Applying max-vendors limit: reducing from %d to %d", len(all_dealers), self.config.max_vendors)
-            all_dealers = all_dealers[:self.config.max_vendors]
+            logger.info(
+                "Applying max-vendors limit: reducing from %d to %d",
+                len(all_dealers),
+                self.config.max_vendors,
+            )
+            all_dealers = all_dealers[: self.config.max_vendors]
 
         logger.info(
             "Regional scraping complete: %d unique dealers discovered; %d selected for processing.",

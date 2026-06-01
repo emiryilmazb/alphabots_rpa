@@ -18,11 +18,24 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.config import ScraperConfig
-from src.models import FINANCING_REQUIRED_FIELDS, VEHICLE_COLUMNS, VEHICLE_TECHNICAL_FIELDS
+from src.models import (
+    FINANCING_REQUIRED_FIELDS,
+    VEHICLE_COLUMNS,
+    VEHICLE_TECHNICAL_FIELDS,
+)
 from src.scraper.detail_page import classify_detail_page
-from src.scraper.fetchers import FetchResult, FetchStrategyManager, HostChromeCdpFetcher, vehicle_id_from_url
+from src.scraper.fetchers import (
+    FetchResult,
+    FetchStrategyManager,
+    HostChromeCdpFetcher,
+    vehicle_id_from_url,
+)
 from src.scraper.fetchers.base import StaticValidation
-from src.scraper.parsers import DETAIL_TARGET_FIELDS, clean_text, parse_vehicle_detail_fields
+from src.scraper.parsers import (
+    DETAIL_TARGET_FIELDS,
+    clean_text,
+    parse_vehicle_detail_fields,
+)
 
 SUMMARY_FILENAME = "detail_enrichment_summary.json"
 FAILED_IDS_FILENAME = "failed_detail_ids.json"
@@ -74,7 +87,9 @@ def write_json(path: Path, data: Any) -> None:
 def parse_methods(value: str) -> list[str]:
     methods: list[str] = []
     for raw_method in value.split(","):
-        method = METHOD_ALIASES.get(raw_method.strip().lower(), raw_method.strip().lower())
+        method = METHOD_ALIASES.get(
+            raw_method.strip().lower(), raw_method.strip().lower()
+        )
         if method and method not in methods:
             methods.append(method)
     return methods
@@ -82,7 +97,9 @@ def parse_methods(value: str) -> list[str]:
 
 def vehicle_urls(vehicle: dict[str, Any], *, source_only: bool = False) -> list[str]:
     ordered = []
-    keys = ["source_vehicle_url"] if source_only else ["Vehicle_URL", "source_vehicle_url"]
+    keys = (
+        ["source_vehicle_url"] if source_only else ["Vehicle_URL", "source_vehicle_url"]
+    )
     for key in keys:
         url = clean_text(vehicle.get(key, ""))
         if url and url not in ordered:
@@ -91,18 +108,26 @@ def vehicle_urls(vehicle: dict[str, Any], *, source_only: bool = False) -> list[
 
 
 def enrichment_missing_fields(vehicle: dict[str, Any]) -> list[str]:
-    return [field for field in ENRICHMENT_FIELDS if not is_present(vehicle.get(field, ""))]
+    return [
+        field for field in ENRICHMENT_FIELDS if not is_present(vehicle.get(field, ""))
+    ]
 
 
 def retry_missing_fields(vehicle: dict[str, Any]) -> list[str]:
-    return [field for field in RETRY_ONLY_MISSING_FIELDS if not is_present(vehicle.get(field, ""))]
+    return [
+        field
+        for field in RETRY_ONLY_MISSING_FIELDS
+        if not is_present(vehicle.get(field, ""))
+    ]
 
 
 def coverage_pct(records: Sequence[dict[str, Any]], fields: Sequence[str]) -> float:
     if not records or not fields:
         return 0.0
     total = len(records) * len(fields)
-    present = sum(1 for record in records for field in fields if is_present(record.get(field, "")))
+    present = sum(
+        1 for record in records for field in fields if is_present(record.get(field, ""))
+    )
     return round((present / total) * 100, 2)
 
 
@@ -214,8 +239,12 @@ class DetailEnricher:
         max_vehicles: int = 0,
     ) -> dict[str, Any]:
         self._ensure_dirs()
-        self.counts["technical_coverage_before_pct"] = coverage_pct(records, VEHICLE_TECHNICAL_FIELDS)
-        self.counts["financing_coverage_before_pct"] = coverage_pct(records, FINANCING_REQUIRED_FIELDS)
+        self.counts["technical_coverage_before_pct"] = coverage_pct(
+            records, VEHICLE_TECHNICAL_FIELDS
+        )
+        self.counts["financing_coverage_before_pct"] = coverage_pct(
+            records, FINANCING_REQUIRED_FIELDS
+        )
         processed = 0
         for index, vehicle in enumerate(records):
             self._ensure_vehicle_shape(vehicle)
@@ -246,8 +275,12 @@ class DetailEnricher:
                 self.counts["still_missing_vehicle_count"] += 1
 
         self.counts["processed_vehicle_count"] = processed
-        self.counts["technical_coverage_after_pct"] = coverage_pct(records, VEHICLE_TECHNICAL_FIELDS)
-        self.counts["financing_coverage_after_pct"] = coverage_pct(records, FINANCING_REQUIRED_FIELDS)
+        self.counts["technical_coverage_after_pct"] = coverage_pct(
+            records, VEHICLE_TECHNICAL_FIELDS
+        )
+        self.counts["financing_coverage_after_pct"] = coverage_pct(
+            records, FINANCING_REQUIRED_FIELDS
+        )
         self._write_failed_ids()
         summary = self.summary()
         write_json(self.cache_dir / SUMMARY_FILENAME, summary)
@@ -289,7 +322,12 @@ class DetailEnricher:
                 parsed = self._load_cached_parsed(vehicle_id)
                 if parsed:
                     self.counts["cache_hit_count"] += 1
-                    self._apply_parsed_fields(vehicle, parsed, source="cache", detail_status="cached_detail_page")
+                    self._apply_parsed_fields(
+                        vehicle,
+                        parsed,
+                        source="cache",
+                        detail_status="cached_detail_page",
+                    )
                     return True
                 self.counts["cache_miss_count"] += 1
                 continue
@@ -297,8 +335,15 @@ class DetailEnricher:
                 parsed = self._load_manual_html(vehicle_id)
                 if parsed:
                     self.counts["manual_html_success_count"] += 1
-                    self._cache_parsed(vehicle_id, parsed, vehicle, source="manual-html")
-                    self._apply_parsed_fields(vehicle, parsed, source="manual-html", detail_status="manual_html")
+                    self._cache_parsed(
+                        vehicle_id, parsed, vehicle, source="manual-html"
+                    )
+                    self._apply_parsed_fields(
+                        vehicle,
+                        parsed,
+                        source="manual-html",
+                        detail_status="manual_html",
+                    )
                     return True
                 self.counts["manual_html_missing_count"] += 1
                 continue
@@ -314,7 +359,9 @@ class DetailEnricher:
                     self.counts["host_chrome_cdp_skipped_disabled_count"] += 1
                     continue
                 source_only = method == "original-url"
-                if await self._try_host_chrome(vehicle, vehicle_id, source_only=source_only):
+                if await self._try_host_chrome(
+                    vehicle, vehicle_id, source_only=source_only
+                ):
                     return True
                 continue
             self.counts[f"unknown_method_{method}_count"] += 1
@@ -326,7 +373,9 @@ class DetailEnricher:
     async def _try_existing(self, vehicle: dict[str, Any], vehicle_id: str) -> bool:
         urls = vehicle_urls(vehicle)
         if not urls:
-            self._record_failure(vehicle, vehicle_id, "existing", "", "missing_vehicle_url")
+            self._record_failure(
+                vehicle, vehicle_id, "existing", "", "missing_vehicle_url"
+            )
             return False
         for url in urls:
             self.counts["existing_attempt_count"] += 1
@@ -337,14 +386,26 @@ class DetailEnricher:
                 playwright_max_retries=1,
             )
             if result.ok:
-                parsed = self._parse_successful_html(result.html, url=result.final_url or url)
+                parsed = self._parse_successful_html(
+                    result.html, url=result.final_url or url
+                )
                 if parsed:
                     self.counts["existing_success_count"] += 1
                     self._cache_html(vehicle_id, result.html)
                     self._cache_parsed(vehicle_id, parsed, vehicle, source="existing")
-                    self._apply_parsed_fields(vehicle, parsed, source="existing", detail_status="real_detail_page")
+                    self._apply_parsed_fields(
+                        vehicle,
+                        parsed,
+                        source="existing",
+                        detail_status="real_detail_page",
+                    )
                     return True
-            reason = result.error_message or result.fallback_reason or result.error_type or "existing_fetch_failed"
+            reason = (
+                result.error_message
+                or result.fallback_reason
+                or result.error_type
+                or "existing_fetch_failed"
+            )
             if self._is_blocked(result, reason):
                 self.counts["existing_blocked_count"] += 1
                 self.existing_consecutive_blocks += 1
@@ -353,7 +414,9 @@ class DetailEnricher:
             else:
                 self.existing_consecutive_blocks = 0
             self.counts["existing_failed_count"] += 1
-            self._record_failure(vehicle, vehicle_id, "existing", url, reason, result=result)
+            self._record_failure(
+                vehicle, vehicle_id, "existing", url, reason, result=result
+            )
             if self.existing_disabled:
                 break
         return False
@@ -367,7 +430,9 @@ class DetailEnricher:
     ) -> bool:
         urls = vehicle_urls(vehicle, source_only=source_only)
         if not urls:
-            self._record_failure(vehicle, vehicle_id, "host-chrome-cdp", "", "missing_vehicle_url")
+            self._record_failure(
+                vehicle, vehicle_id, "host-chrome-cdp", "", "missing_vehicle_url"
+            )
             return False
         fetcher = self._get_host_fetcher()
         for url in urls:
@@ -376,16 +441,22 @@ class DetailEnricher:
             await self._sleep_after_live_attempt()
             if result.ok:
                 self.host_chrome_consecutive_blocks = 0
-                parsed = self._parse_successful_html(result.html, url=result.final_url or url)
+                parsed = self._parse_successful_html(
+                    result.html, url=result.final_url or url
+                )
                 if parsed:
                     self.counts["host_chrome_cdp_success_count"] += 1
                     self._cache_html(vehicle_id, result.html)
-                    self._cache_parsed(vehicle_id, parsed, vehicle, source="host-chrome-cdp")
+                    self._cache_parsed(
+                        vehicle_id, parsed, vehicle, source="host-chrome-cdp"
+                    )
                     self._apply_parsed_fields(
                         vehicle,
                         parsed,
                         source="host-chrome-cdp",
-                        detail_status=result.detail_status or result.classification or "real_detail_page",
+                        detail_status=result.detail_status
+                        or result.classification
+                        or "real_detail_page",
                     )
                     return True
 
@@ -405,7 +476,9 @@ class DetailEnricher:
             else:
                 self.host_chrome_consecutive_blocks = 0
             self.counts["host_chrome_cdp_failed_count"] += 1
-            self._record_failure(vehicle, vehicle_id, "host-chrome-cdp", url, reason, result=result)
+            self._record_failure(
+                vehicle, vehicle_id, "host-chrome-cdp", url, reason, result=result
+            )
             if self.host_chrome_disabled:
                 break
         return False
@@ -422,7 +495,11 @@ class DetailEnricher:
         filled = merge_non_empty_fields(vehicle, parsed_fields, source=source)
         after_missing = len(enrichment_missing_fields(vehicle))
         improved_count = max(0, before_missing - after_missing)
-        target_extracted_count = sum(1 for field in DETAIL_TARGET_FIELDS if is_present(parsed_fields.get(field, "")))
+        target_extracted_count = sum(
+            1
+            for field in DETAIL_TARGET_FIELDS
+            if is_present(parsed_fields.get(field, ""))
+        )
 
         if target_extracted_count:
             vehicle["detail_target_fields_extracted_count"] = target_extracted_count
@@ -501,7 +578,9 @@ class DetailEnricher:
             self.parsed_cache_dir / f"{vehicle_id}.json",
             {
                 "vehicle_id": vehicle_id,
-                "url": clean_text(vehicle.get("Vehicle_URL") or vehicle.get("source_vehicle_url", "")),
+                "url": clean_text(
+                    vehicle.get("Vehicle_URL") or vehicle.get("source_vehicle_url", "")
+                ),
                 "source": source,
                 "cached_at_utc": utc_now(),
                 "parsed_fields": parsed_fields,
@@ -519,7 +598,9 @@ class DetailEnricher:
         result: FetchResult | None = None,
     ) -> None:
         vehicle["detail_strategy_used"] = method
-        vehicle["detail_status"] = (result.detail_status if result else "") or "detail_enrichment_failed"
+        vehicle["detail_status"] = (
+            result.detail_status if result else ""
+        ) or "detail_enrichment_failed"
         vehicle["detail_failure_reason"] = reason
         vehicle.setdefault("vehicle_data_source", "listing_fallback")
         self.new_failures.append(
@@ -625,7 +706,11 @@ class DetailEnricher:
             self.counts[disabled_counter] += 1
             return True
 
-        if self.max_block_rate and attempts > 0 and (blocked / attempts) > self.max_block_rate:
+        if (
+            self.max_block_rate
+            and attempts > 0
+            and (blocked / attempts) > self.max_block_rate
+        ):
             self.counts[f"{method.replace('-', '_')}_disabled_by_block_rate_count"] += 1
             return True
         return False
@@ -635,9 +720,13 @@ class DetailEnricher:
         base = FetchStrategyManager.validate_static_html(result)
         if not base.ok:
             return base
-        classification = classify_detail_page(result.html, url=result.final_url or result.url)
+        classification = classify_detail_page(
+            result.html, url=result.final_url or result.url
+        )
         if classification.classification != "real_detail_page":
-            return StaticValidation(False, classification.reason or classification.classification)
+            return StaticValidation(
+                False, classification.reason or classification.classification
+            )
         return StaticValidation(True)
 
     @staticmethod
@@ -669,7 +758,10 @@ class DetailEnricher:
     def _normalize_methods(methods: Sequence[str]) -> list[str]:
         normalized = list(methods)
         if "cache" in normalized:
-            normalized = ["cache", *[method for method in normalized if method != "cache"]]
+            normalized = [
+                "cache",
+                *[method for method in normalized if method != "cache"],
+            ]
         else:
             normalized.insert(0, "cache")
         return normalized
@@ -713,8 +805,14 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-cars", required=True, help="Existing raw cars JSON")
-    parser.add_argument("--output-cars", required=True, help="Output enriched cars JSON")
-    parser.add_argument("--cache-dir", default="data/detail_cache", help="Cache root for HTML, parsed fields, and failures")
+    parser.add_argument(
+        "--output-cars", required=True, help="Output enriched cars JSON"
+    )
+    parser.add_argument(
+        "--cache-dir",
+        default="data/detail_cache",
+        help="Cache root for HTML, parsed fields, and failures",
+    )
     parser.add_argument(
         "--methods",
         default="cache,listing,host-chrome-cdp,manual-html",
@@ -724,11 +822,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-vehicles", type=int, default=0, help="0 means no limit")
     parser.add_argument("--sleep-seconds", type=float, default=0.0)
     parser.add_argument("--sleep-jitter-seconds", type=float, default=0.0)
-    parser.add_argument("--stop-after-blocks", type=int, default=0, help="0 disables block threshold")
-    parser.add_argument("--max-block-rate", type=float, default=0.0, help="0 disables block-rate stopping")
-    parser.add_argument("--method-cooldown-blocks", type=int, default=0, help="0 disables consecutive-block cooldown")
+    parser.add_argument(
+        "--stop-after-blocks", type=int, default=0, help="0 disables block threshold"
+    )
+    parser.add_argument(
+        "--max-block-rate",
+        type=float,
+        default=0.0,
+        help="0 disables block-rate stopping",
+    )
+    parser.add_argument(
+        "--method-cooldown-blocks",
+        type=int,
+        default=0,
+        help="0 disables consecutive-block cooldown",
+    )
     parser.add_argument("--method-cooldown-seconds", type=float, default=0.0)
-    parser.add_argument("--retry-only-missing", choices=["true", "false"], default="false")
+    parser.add_argument(
+        "--retry-only-missing", choices=["true", "false"], default="false"
+    )
     parser.add_argument("--resume", choices=["true", "false"], default="true")
     parser.add_argument("--manual-html-dir", default="")
     parser.add_argument("--failed-ids-path", default="")

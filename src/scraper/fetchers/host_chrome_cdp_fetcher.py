@@ -43,9 +43,13 @@ class HostChromeCdpFetcher:
             if page is None:
                 page = await context.new_page()
                 created_page = True
-                response = await page.goto(fetch_url, wait_until="domcontentloaded", timeout=60000)
+                response = await page.goto(
+                    fetch_url, wait_until="domcontentloaded", timeout=60000
+                )
             elif page.url != fetch_url:
-                response = await page.goto(fetch_url, wait_until="domcontentloaded", timeout=60000)
+                response = await page.goto(
+                    fetch_url, wait_until="domcontentloaded", timeout=60000
+                )
 
             try:
                 await page.wait_for_load_state("networkidle", timeout=5000)
@@ -76,7 +80,8 @@ class HostChromeCdpFetcher:
                     attempt=attempt,
                     elapsed_ms=elapsed,
                     error_type=failure_type,
-                    error_message=classification.reason or classification.classification,
+                    error_message=classification.reason
+                    or classification.classification,
                     classification=classification.classification,
                     detail_status=classification.classification,
                     failure_reason=classification.reason,
@@ -113,7 +118,11 @@ class HostChromeCdpFetcher:
                 try:
                     await page.close()
                 except Exception:
-                    logger.debug("Could not close host Chrome CDP tab created for %s.", url, exc_info=True)
+                    logger.debug(
+                        "Could not close host Chrome CDP tab created for %s.",
+                        url,
+                        exc_info=True,
+                    )
 
     async def close(self) -> None:
         """Release Playwright transport without closing the user's Chrome window."""
@@ -122,7 +131,10 @@ class HostChromeCdpFetcher:
             try:
                 await self._playwright_cm.__aexit__(None, None, None)
             except Exception:
-                logger.debug("Could not stop host Chrome CDP Playwright transport.", exc_info=True)
+                logger.debug(
+                    "Could not stop host Chrome CDP Playwright transport.",
+                    exc_info=True,
+                )
         self._playwright_cm = None
         self._playwright = None
 
@@ -152,7 +164,10 @@ class HostChromeCdpFetcher:
         if "mobile.de" not in parsed.netloc:
             return url
         lowered_path = parsed.path.lower()
-        if "/fahrzeuge/details" not in lowered_path and "/auto-inserat/" not in lowered_path:
+        if (
+            "/fahrzeuge/details" not in lowered_path
+            and "/auto-inserat/" not in lowered_path
+        ):
             return url
         query = dict(parse_qsl(parsed.query, keep_blank_values=True))
         query["lang"] = "de"

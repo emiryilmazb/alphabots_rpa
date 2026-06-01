@@ -23,8 +23,8 @@ class ScraperConfig:
     """Central configuration for the mobile.de scraper pipeline."""
 
     # ── Target ────────────────────────────────────────────────────────────
-    uc_wait_profile: str = 'safe'
-    uc_block_resources: str = 'false'
+    uc_wait_profile: str = "safe"
+    uc_block_resources: str = "false"
     state: str = "nordrhein-westfalen"
     base_url: str = "https://home.mobile.de"
     regional_url: str = "https://home.mobile.de/regional"
@@ -119,7 +119,9 @@ class ScraperConfig:
     checkpoint_every: int = 50
 
     # ── Paths ─────────────────────────────────────────────────────────────
-    project_root: Path = field(default_factory=lambda: Path(__file__).resolve().parent.parent)
+    project_root: Path = field(
+        default_factory=lambda: Path(__file__).resolve().parent.parent
+    )
     output_dir_override: Path | None = None
     input_dir_override: Path | None = None
 
@@ -168,7 +170,9 @@ class ScraperConfig:
         base = self.project_root / "data"
         if not self.overwrite and self.run_id:
             raw_cars = base / "raw" / "cars_raw.json"
-            db_file = base / "state" / f"mobile_de_{self.state.replace('-', '_')}.sqlite3"
+            db_file = (
+                base / "state" / f"mobile_de_{self.state.replace('-', '_')}.sqlite3"
+            )
             raw_exists = raw_cars.exists() and raw_cars.stat().st_size > 50000
             db_exists = db_file.exists() and db_file.stat().st_size > 50000
             if raw_exists or db_exists:
@@ -219,7 +223,9 @@ class ScraperConfig:
     def excel_path(self) -> Path:
         if self.state == "nordrhein-westfalen":
             return self.output_dir / "mobile_de_nrw_dashboard.xlsx"
-        return self.output_dir / f"mobile_de_{self.state.replace('-', '_')}_dashboard.xlsx"
+        return (
+            self.output_dir / f"mobile_de_{self.state.replace('-', '_')}_dashboard.xlsx"
+        )
 
     @property
     def word_path(self) -> Path:
@@ -229,8 +235,15 @@ class ScraperConfig:
 
     def ensure_dirs(self) -> None:
         """Create all required directories."""
-        for d in [self.raw_dir, self.processed_dir, self.output_dir,
-                  self.checkpoint_dir, self.state_dir, self.debug_dir, self.log_dir]:
+        for d in [
+            self.raw_dir,
+            self.processed_dir,
+            self.output_dir,
+            self.checkpoint_dir,
+            self.state_dir,
+            self.debug_dir,
+            self.log_dir,
+        ]:
             d.mkdir(parents=True, exist_ok=True)
         if self.user_data_dir is not None:
             self.user_data_dir.mkdir(parents=True, exist_ok=True)
@@ -244,118 +257,300 @@ def parse_args() -> ScraperConfig:
         description="mobile.de Vendor & Vehicle Scraper",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--state", default=os.getenv("STATE", "nordrhein-westfalen"),
-                        help="German state slug to scrape")
-    parser.add_argument("--start-url", default=os.getenv("START_URL"),
-                        help="Optional regional start URL/template. Use {page} for paginated templates.")
-    parser.add_argument("--max-vendors", type=int, default=int(os.getenv("MAX_VENDORS", "0")),
-                        help="Max vendors to scrape (0 = all)")
-    parser.add_argument("--max-cars-per-vendor", type=int, default=int(os.getenv("MAX_CARS_PER_VENDOR", "0")),
-                        help="Max cars per vendor (0 = all)")
-    parser.add_argument("--max-vehicles-per-vendor", type=int, default=None,
-                        help="Alias for --max-cars-per-vendor")
-    parser.add_argument("--max-pages", type=int, default=int(os.getenv("MAX_PAGES_PER_STATE", "0")),
-                        help="Max regional pages per state (0 = all)")
-    parser.add_argument("--skip-vehicle-details", type=str, default=os.getenv("SKIP_VEHICLE_DETAILS", "false"),
-                        choices=["true", "false"],
-                        help="Use dealer listing-card data only and skip detail pages")
-    parser.add_argument("--traverse-vehicle-categories", type=str, default=os.getenv("TRAVERSE_VEHICLE_CATEGORIES", "true"), choices=["true", "false"], help="Legacy boolean")
-    parser.add_argument("--category-traversal", type=str, default=os.getenv("CATEGORY_TRAVERSAL", "discovered"), choices=["discovered", "all", "off"], help="Category traversal mode")
-    parser.add_argument("--use-storage-state", type=str, default=os.getenv("USE_STORAGE_STATE", "true"), choices=["true", "false"])
-    parser.add_argument("--max-detail-failures", type=int, default=int(os.getenv("MAX_DETAIL_FAILURES", "2")),
-                        help="Disable detail-page requests after this many blocked/5xx detail failures")
-    parser.add_argument("--max-retries", type=int, default=int(os.getenv("MAX_RETRIES", "3")),
-                        help="Maximum navigation/fetch retries per URL")
-    parser.add_argument("--detail-max-retries", type=int, default=int(os.getenv("DETAIL_MAX_RETRIES", "1")),
-                        help="Maximum Playwright navigation retries for vehicle detail pages")
-    parser.add_argument("--retry-delay", type=float, default=float(os.getenv("RETRY_DELAY", "5.0")),
-                        help="Base retry delay in seconds")
-    parser.add_argument("--browser", default=os.getenv("BROWSER", "chromium"),
-                        choices=sorted(VALID_BROWSERS),
-                        help="Playwright browser engine/channel")
-    parser.add_argument("--browser-mode", default=os.getenv("BROWSER_MODE"),
-                        choices=sorted(VALID_BROWSER_MODES),
-                        help="Browser display mode. xvfb expects an entrypoint such as xvfb-run.")
-    parser.add_argument("--headless", type=str, default=os.getenv("HEADLESS"),
-                        choices=["true", "false"],
-                        help="Backward-compatible shortcut for --browser-mode=headless")
-    parser.add_argument("--slow-mo", type=int, default=int(os.getenv("SLOW_MO", "0")),
-                        help="Milliseconds to slow Playwright actions")
-    parser.add_argument("--fallback-to-headed-on-block", type=str,
-                        default=os.getenv("FALLBACK_TO_HEADED_ON_BLOCK", "true"),
-                        choices=["true", "false"],
-                        help="If headless receives access-denied site protection, restart once in headed mode")
-    parser.add_argument("--debug", type=str, default=os.getenv("DEBUG", "false"),
-                        choices=["true", "false"],
-                        help="Enable verbose debug behavior")
-    parser.add_argument("--save-debug-artifacts", type=str,
-                        default=os.getenv("SAVE_DEBUG_ARTIFACTS", "false"),
-                        choices=["true", "false"],
-                        help="Save HTML and screenshot artifacts when page navigation fails")
-    parser.add_argument("--fetch-strategy", default=os.getenv("FETCH_STRATEGY", "auto"),
-                        choices=sorted(VALID_FETCH_STRATEGIES),
-                        help="Page fetch strategy. auto tries curl for static HTML and falls back to Playwright.")
-    parser.add_argument("--curl-concurrency", type=int, default=int(os.getenv("CURL_CONCURRENCY", "4")),
-                        help="Maximum concurrent curl_cffi fetches")
-    parser.add_argument("--playwright-concurrency", type=int, default=int(os.getenv("PLAYWRIGHT_CONCURRENCY", "3")),
-                        help="Maximum concurrent Playwright-backed fetches in newer pipeline modes")
-    parser.add_argument("--user-data-dir", default=os.getenv("USER_DATA_DIR"),
-                        help="Optional persistent Playwright profile directory")
-    parser.add_argument("--storage-state", default=os.getenv("STORAGE_STATE"),
-                        help="Optional Playwright storage_state JSON path to load/save cookies/session state")
-    parser.add_argument("--pipeline-mode", default=os.getenv("PIPELINE_MODE", "sqlite"),
-                        choices=sorted(VALID_PIPELINE_MODES),
-                        help="Execution engine. legacy keeps the existing sequential scraper; sqlite enables the durable queue pipeline.")
-    parser.add_argument("--regional-concurrency", type=int, default=int(os.getenv("REGIONAL_CONCURRENCY", "1")),
-                        help="Regional discovery concurrency placeholder; current regional discovery is intentionally single-producer")
-    parser.add_argument("--vendor-concurrency", type=int, default=int(os.getenv("VENDOR_CONCURRENCY", "1")),
-                        help="Concurrent vendor workers for sqlite pipeline")
-    parser.add_argument("--vehicle-listing-concurrency", type=int,
-                        default=int(os.getenv("VEHICLE_LISTING_CONCURRENCY", "1")),
-                        help="Concurrent listing workers placeholder; vendor workers own listing traversal")
-    parser.add_argument("--vehicle-detail-concurrency", type=int,
-                        default=int(os.getenv("VEHICLE_DETAIL_CONCURRENCY", "1")),
-                        help="Concurrent vehicle detail workers for sqlite pipeline")
-    parser.add_argument("--detail-open-strategy", type=str, default=os.getenv("DETAIL_OPEN_STRATEGY", "auto"))
-    parser.add_argument("--chrome-cdp-url", type=str, default=os.getenv("CHROME_CDP_URL", "http://127.0.0.1:9222"),
-                        help="Existing host Chrome remote debugging endpoint for --detail-open-strategy host-chrome-cdp")
-    parser.add_argument("--detail-policy", default=os.getenv("DETAIL_POLICY", "missing-required"),
-                        choices=sorted(VALID_DETAIL_POLICIES),
-                        help="When vehicle detail pages are fetched after listing/card parsing")
-    parser.add_argument("--idle-browser-timeout-seconds", type=float,
-                        default=float(os.getenv("IDLE_BROWSER_TIMEOUT_SECONDS", "15")),
-                        help="Close reusable worker browsers after this many idle seconds (0 disables idle close)")
-    parser.add_argument("--resume", type=str, default=os.getenv("RESUME", "true"),
-                        choices=["true", "false"],
-                        help="Resume from checkpoint")
-    parser.add_argument("--clean-run", type=str, default=os.getenv("CLEAN_RUN", "false"),
-                        choices=["true", "false"],
-                        help="Start from a clean checkpoint/state; disables resume")
-    parser.add_argument("--force-resume", type=str, default=os.getenv("FORCE_RESUME", "false"),
-                        choices=["true", "false"],
-                        help="Allow resume despite config-hash mismatch where supported")
-    parser.add_argument("--clear-checkpoints", type=str, default=os.getenv("CLEAR_CHECKPOINTS", "false"),
-                        choices=["true", "false"],
-                        help="Delete prior checkpoints before scraping")
-    parser.add_argument("--clear-state", type=str, default=os.getenv("CLEAR_STATE", "false"),
-                        choices=["true", "false"],
-                        help="Delete SQLite state before running the sqlite pipeline")
-    parser.add_argument("--checkpoint-every", type=int, default=int(os.getenv("CHECKPOINT_EVERY", "50")),
-                        help="Save JSON checkpoints after this many new records (0 = final save only)")
-    parser.add_argument("--flush-every", type=int, default=int(os.getenv("FLUSH_EVERY", "100")),
-                        help="Batch flush size for durable writers")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing >50KB files")
+    parser.add_argument(
+        "--state",
+        default=os.getenv("STATE", "nordrhein-westfalen"),
+        help="German state slug to scrape",
+    )
+    parser.add_argument(
+        "--start-url",
+        default=os.getenv("START_URL"),
+        help="Optional regional start URL/template. Use {page} for paginated templates.",
+    )
+    parser.add_argument(
+        "--max-vendors",
+        type=int,
+        default=int(os.getenv("MAX_VENDORS", "0")),
+        help="Max vendors to scrape (0 = all)",
+    )
+    parser.add_argument(
+        "--max-cars-per-vendor",
+        type=int,
+        default=int(os.getenv("MAX_CARS_PER_VENDOR", "0")),
+        help="Max cars per vendor (0 = all)",
+    )
+    parser.add_argument(
+        "--max-vehicles-per-vendor",
+        type=int,
+        default=None,
+        help="Alias for --max-cars-per-vendor",
+    )
+    parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=int(os.getenv("MAX_PAGES_PER_STATE", "0")),
+        help="Max regional pages per state (0 = all)",
+    )
+    parser.add_argument(
+        "--skip-vehicle-details",
+        type=str,
+        default=os.getenv("SKIP_VEHICLE_DETAILS", "false"),
+        choices=["true", "false"],
+        help="Use dealer listing-card data only and skip detail pages",
+    )
+    parser.add_argument(
+        "--traverse-vehicle-categories",
+        type=str,
+        default=os.getenv("TRAVERSE_VEHICLE_CATEGORIES", "true"),
+        choices=["true", "false"],
+        help="Legacy boolean",
+    )
+    parser.add_argument(
+        "--category-traversal",
+        type=str,
+        default=os.getenv("CATEGORY_TRAVERSAL", "discovered"),
+        choices=["discovered", "all", "off"],
+        help="Category traversal mode",
+    )
+    parser.add_argument(
+        "--use-storage-state",
+        type=str,
+        default=os.getenv("USE_STORAGE_STATE", "true"),
+        choices=["true", "false"],
+    )
+    parser.add_argument(
+        "--max-detail-failures",
+        type=int,
+        default=int(os.getenv("MAX_DETAIL_FAILURES", "2")),
+        help="Disable detail-page requests after this many blocked/5xx detail failures",
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=int(os.getenv("MAX_RETRIES", "3")),
+        help="Maximum navigation/fetch retries per URL",
+    )
+    parser.add_argument(
+        "--detail-max-retries",
+        type=int,
+        default=int(os.getenv("DETAIL_MAX_RETRIES", "1")),
+        help="Maximum Playwright navigation retries for vehicle detail pages",
+    )
+    parser.add_argument(
+        "--retry-delay",
+        type=float,
+        default=float(os.getenv("RETRY_DELAY", "5.0")),
+        help="Base retry delay in seconds",
+    )
+    parser.add_argument(
+        "--browser",
+        default=os.getenv("BROWSER", "chromium"),
+        choices=sorted(VALID_BROWSERS),
+        help="Playwright browser engine/channel",
+    )
+    parser.add_argument(
+        "--browser-mode",
+        default=os.getenv("BROWSER_MODE"),
+        choices=sorted(VALID_BROWSER_MODES),
+        help="Browser display mode. xvfb expects an entrypoint such as xvfb-run.",
+    )
+    parser.add_argument(
+        "--headless",
+        type=str,
+        default=os.getenv("HEADLESS"),
+        choices=["true", "false"],
+        help="Backward-compatible shortcut for --browser-mode=headless",
+    )
+    parser.add_argument(
+        "--slow-mo",
+        type=int,
+        default=int(os.getenv("SLOW_MO", "0")),
+        help="Milliseconds to slow Playwright actions",
+    )
+    parser.add_argument(
+        "--fallback-to-headed-on-block",
+        type=str,
+        default=os.getenv("FALLBACK_TO_HEADED_ON_BLOCK", "true"),
+        choices=["true", "false"],
+        help="If headless receives access-denied site protection, restart once in headed mode",
+    )
+    parser.add_argument(
+        "--debug",
+        type=str,
+        default=os.getenv("DEBUG", "false"),
+        choices=["true", "false"],
+        help="Enable verbose debug behavior",
+    )
+    parser.add_argument(
+        "--save-debug-artifacts",
+        type=str,
+        default=os.getenv("SAVE_DEBUG_ARTIFACTS", "false"),
+        choices=["true", "false"],
+        help="Save HTML and screenshot artifacts when page navigation fails",
+    )
+    parser.add_argument(
+        "--fetch-strategy",
+        default=os.getenv("FETCH_STRATEGY", "auto"),
+        choices=sorted(VALID_FETCH_STRATEGIES),
+        help="Page fetch strategy. auto tries curl for static HTML and falls back to Playwright.",
+    )
+    parser.add_argument(
+        "--curl-concurrency",
+        type=int,
+        default=int(os.getenv("CURL_CONCURRENCY", "4")),
+        help="Maximum concurrent curl_cffi fetches",
+    )
+    parser.add_argument(
+        "--playwright-concurrency",
+        type=int,
+        default=int(os.getenv("PLAYWRIGHT_CONCURRENCY", "3")),
+        help="Maximum concurrent Playwright-backed fetches in newer pipeline modes",
+    )
+    parser.add_argument(
+        "--user-data-dir",
+        default=os.getenv("USER_DATA_DIR"),
+        help="Optional persistent Playwright profile directory",
+    )
+    parser.add_argument(
+        "--storage-state",
+        default=os.getenv("STORAGE_STATE"),
+        help="Optional Playwright storage_state JSON path to load/save cookies/session state",
+    )
+    parser.add_argument(
+        "--pipeline-mode",
+        default=os.getenv("PIPELINE_MODE", "sqlite"),
+        choices=sorted(VALID_PIPELINE_MODES),
+        help="Execution engine. legacy keeps the existing sequential scraper; sqlite enables the durable queue pipeline.",
+    )
+    parser.add_argument(
+        "--regional-concurrency",
+        type=int,
+        default=int(os.getenv("REGIONAL_CONCURRENCY", "1")),
+        help="Regional discovery concurrency placeholder; current regional discovery is intentionally single-producer",
+    )
+    parser.add_argument(
+        "--vendor-concurrency",
+        type=int,
+        default=int(os.getenv("VENDOR_CONCURRENCY", "1")),
+        help="Concurrent vendor workers for sqlite pipeline",
+    )
+    parser.add_argument(
+        "--vehicle-listing-concurrency",
+        type=int,
+        default=int(os.getenv("VEHICLE_LISTING_CONCURRENCY", "1")),
+        help="Concurrent listing workers placeholder; vendor workers own listing traversal",
+    )
+    parser.add_argument(
+        "--vehicle-detail-concurrency",
+        type=int,
+        default=int(os.getenv("VEHICLE_DETAIL_CONCURRENCY", "1")),
+        help="Concurrent vehicle detail workers for sqlite pipeline",
+    )
+    parser.add_argument(
+        "--detail-open-strategy",
+        type=str,
+        default=os.getenv("DETAIL_OPEN_STRATEGY", "auto"),
+    )
+    parser.add_argument(
+        "--chrome-cdp-url",
+        type=str,
+        default=os.getenv("CHROME_CDP_URL", "http://127.0.0.1:9222"),
+        help="Existing host Chrome remote debugging endpoint for --detail-open-strategy host-chrome-cdp",
+    )
+    parser.add_argument(
+        "--detail-policy",
+        default=os.getenv("DETAIL_POLICY", "missing-required"),
+        choices=sorted(VALID_DETAIL_POLICIES),
+        help="When vehicle detail pages are fetched after listing/card parsing",
+    )
+    parser.add_argument(
+        "--idle-browser-timeout-seconds",
+        type=float,
+        default=float(os.getenv("IDLE_BROWSER_TIMEOUT_SECONDS", "15")),
+        help="Close reusable worker browsers after this many idle seconds (0 disables idle close)",
+    )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=os.getenv("RESUME", "true"),
+        choices=["true", "false"],
+        help="Resume from checkpoint",
+    )
+    parser.add_argument(
+        "--clean-run",
+        type=str,
+        default=os.getenv("CLEAN_RUN", "false"),
+        choices=["true", "false"],
+        help="Start from a clean checkpoint/state; disables resume",
+    )
+    parser.add_argument(
+        "--force-resume",
+        type=str,
+        default=os.getenv("FORCE_RESUME", "false"),
+        choices=["true", "false"],
+        help="Allow resume despite config-hash mismatch where supported",
+    )
+    parser.add_argument(
+        "--clear-checkpoints",
+        type=str,
+        default=os.getenv("CLEAR_CHECKPOINTS", "false"),
+        choices=["true", "false"],
+        help="Delete prior checkpoints before scraping",
+    )
+    parser.add_argument(
+        "--clear-state",
+        type=str,
+        default=os.getenv("CLEAR_STATE", "false"),
+        choices=["true", "false"],
+        help="Delete SQLite state before running the sqlite pipeline",
+    )
+    parser.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=int(os.getenv("CHECKPOINT_EVERY", "50")),
+        help="Save JSON checkpoints after this many new records (0 = final save only)",
+    )
+    parser.add_argument(
+        "--flush-every",
+        type=int,
+        default=int(os.getenv("FLUSH_EVERY", "100")),
+        help="Batch flush size for durable writers",
+    )
+    parser.add_argument(
+        "--overwrite", action="store_true", help="Overwrite existing >50KB files"
+    )
     parser.add_argument("--process-existing", "--skip-scrape", action="store_true")
     parser.add_argument("--benchmark", action="store_true")
     parser.add_argument("--input-dir")
-    parser.add_argument("--output-dir", default=os.getenv("OUTPUT_DIR"),
-                        help="Optional directory for final Excel/Word/errors outputs")
-    parser.add_argument("--min-delay", type=float, default=float(os.getenv("MIN_DELAY", "2.0")),
-                        help="Min delay between requests (seconds)")
-    parser.add_argument("--max-delay", type=float, default=float(os.getenv("MAX_DELAY", "5.0")),
-                        help="Max delay between requests (seconds)")
-    parser.add_argument("--uc-wait-profile", default=os.getenv("UC_WAIT_PROFILE", "safe"), choices=["safe", "adaptive"], help="Wait profile for undetected-chromedriver")
-    parser.add_argument("--uc-block-resources", default=os.getenv("UC_BLOCK_RESOURCES", "false"), choices=["true", "false"], help="Block images/fonts in undetected-chromedriver")
+    parser.add_argument(
+        "--output-dir",
+        default=os.getenv("OUTPUT_DIR"),
+        help="Optional directory for final Excel/Word/errors outputs",
+    )
+    parser.add_argument(
+        "--min-delay",
+        type=float,
+        default=float(os.getenv("MIN_DELAY", "2.0")),
+        help="Min delay between requests (seconds)",
+    )
+    parser.add_argument(
+        "--max-delay",
+        type=float,
+        default=float(os.getenv("MAX_DELAY", "5.0")),
+        help="Max delay between requests (seconds)",
+    )
+    parser.add_argument(
+        "--uc-wait-profile",
+        default=os.getenv("UC_WAIT_PROFILE", "safe"),
+        choices=["safe", "adaptive"],
+        help="Wait profile for undetected-chromedriver",
+    )
+    parser.add_argument(
+        "--uc-block-resources",
+        default=os.getenv("UC_BLOCK_RESOURCES", "false"),
+        choices=["true", "false"],
+        help="Block images/fonts in undetected-chromedriver",
+    )
 
     args = parser.parse_args()
     headless = args.headless.lower() == "true" if args.headless is not None else False
@@ -393,8 +588,13 @@ def parse_args() -> ScraperConfig:
         curl_concurrency=args.curl_concurrency,
         playwright_concurrency=args.playwright_concurrency,
         user_data_dir=Path(args.user_data_dir) if args.user_data_dir else None,
-        storage_state=Path(args.storage_state) if args.storage_state else (
-            Path(__file__).resolve().parent.parent / "data" / "browser_state" / "mobile_de_storage_state.json"
+        storage_state=Path(args.storage_state)
+        if args.storage_state
+        else (
+            Path(__file__).resolve().parent.parent
+            / "data"
+            / "browser_state"
+            / "mobile_de_storage_state.json"
         ),
         pipeline_mode=args.pipeline_mode,
         process_existing=args.process_existing,
@@ -416,7 +616,9 @@ def parse_args() -> ScraperConfig:
         flush_every=max(1, args.flush_every),
         overwrite=getattr(args, "overwrite", False),
         output_dir_override=Path(args.output_dir) if args.output_dir else None,
-        input_dir_override=Path(args.input_dir) if getattr(args, "input_dir", None) else None,
+        input_dir_override=Path(args.input_dir)
+        if getattr(args, "input_dir", None)
+        else None,
         min_delay=args.min_delay,
         max_delay=args.max_delay,
     )

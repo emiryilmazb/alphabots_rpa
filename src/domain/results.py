@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional
 
+
 @dataclass
 class DetailFetchStatus:
     success: bool = False
@@ -8,10 +9,12 @@ class DetailFetchStatus:
     redirected: bool = False
     error_message: Optional[str] = None
 
+
 @dataclass
 class DetailFetchResult:
     status: DetailFetchStatus
     data: Dict[str, Any] = field(default_factory=dict)
+
 
 @dataclass
 class ShardRunResult:
@@ -20,16 +23,19 @@ class ShardRunResult:
     total_vehicles: int = 0
     success: bool = True
 
+
 @dataclass
 class MergeRunResult:
     total_merged_vendors: int = 0
     total_merged_vehicles: int = 0
     output_path: str = ""
 
+
 @dataclass
 class CoverageFieldResult:
     field_name: str
     coverage_percentage: float = 0.0
+
 
 @dataclass
 class RunManifest:

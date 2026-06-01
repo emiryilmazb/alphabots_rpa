@@ -298,10 +298,14 @@ class VehicleData(BaseModel):
     detail_strategy_used: str = Field("", alias="detail_strategy_used")
     detail_status: str = Field("", alias="detail_status")
     detail_failure_reason: str = Field("", alias="detail_failure_reason")
-    detail_target_fields_extracted_count: str = Field("", alias="detail_target_fields_extracted_count")
+    detail_target_fields_extracted_count: str = Field(
+        "", alias="detail_target_fields_extracted_count"
+    )
     detail_fields_filled: str = Field("", alias="detail_fields_filled")
     detail_artifact_html_path: str = Field("", alias="detail_artifact_html_path")
-    detail_artifact_screenshot_path: str = Field("", alias="detail_artifact_screenshot_path")
+    detail_artifact_screenshot_path: str = Field(
+        "", alias="detail_artifact_screenshot_path"
+    )
     scraped_at: str = Field("", alias="scraped_at")
     run_id: str = Field("", alias="run_id")
 

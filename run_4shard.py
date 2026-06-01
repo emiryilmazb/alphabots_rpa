@@ -1,4 +1,9 @@
-import os, subprocess, time, glob, sys, argparse
+import os
+import subprocess
+import glob
+import sys
+import argparse
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -17,7 +22,9 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.shard_count >= 8 and not args.force:
-        print("ERROR: 8-shard failed on this host due to RAM limits. Use --force to override.")
+        print(
+            "ERROR: 8-shard failed on this host due to RAM limits. Use --force to override."
+        )
         sys.exit(1)
 
     base = os.getcwd()
@@ -27,46 +34,58 @@ def main() -> None:
                 f"docker compose -p mobilede_shard_{i} down --remove-orphans",
                 shell=True,
                 capture_output=True,
+                check=False,
             )
 
     procs = []
-    t0 = time.time()
     for i in range(args.shard_count):
         shard_data = os.path.join(args.output_root, f"shard_{i}")
         shard_logs = os.path.join("logs_shards", f"shard_{i}")
         os.makedirs(shard_data, exist_ok=True)
         os.makedirs(shard_logs, exist_ok=True)
 
-        cmd = (f'docker compose -p mobilede_shard_{i} run --rm '
-               f'-v "{base}\\{shard_data}:/app/data" -v "{base}\\{shard_logs}:/app/logs" '
-               f'-e VENDOR_SHARD_INDEX={i} -e VENDOR_SHARD_COUNT={args.shard_count} '
-               f'-e UC_BLOCK_RESOURCES={args.uc_block_resources} -e BROWSER_MODE=xvfb scraper python -m src.main '
-               f'--state {args.state} --pipeline-mode sqlite --browser-mode xvfb '
-               f'--fetch-strategy auto --detail-policy missing-required --detail-open-strategy uc-popup '
-               f'--detail-max-retries 1 --max-vendors {args.max_vendors} --max-cars-per-vendor {args.max_cars_per_vendor} '
-               f'--vendor-concurrency 1 --vehicle-detail-concurrency 1 --benchmark --clean-run true '
-               f'--uc-wait-profile {args.uc_wait_profile} --uc-block-resources {args.uc_block_resources}')
+        cmd = (
+            f"docker compose -p mobilede_shard_{i} run --rm "
+            f'-v "{base}\\{shard_data}:/app/data" -v "{base}\\{shard_logs}:/app/logs" '
+            f"-e VENDOR_SHARD_INDEX={i} -e VENDOR_SHARD_COUNT={args.shard_count} "
+            f"-e UC_BLOCK_RESOURCES={args.uc_block_resources} -e BROWSER_MODE=xvfb scraper python -m src.main "
+            f"--state {args.state} --pipeline-mode sqlite --browser-mode xvfb "
+            f"--fetch-strategy auto --detail-policy missing-required --detail-open-strategy uc-popup "
+            f"--detail-max-retries 1 --max-vendors {args.max_vendors} --max-cars-per-vendor {args.max_cars_per_vendor} "
+            f"--vendor-concurrency 1 --vehicle-detail-concurrency 1 --benchmark --clean-run true "
+            f"--uc-wait-profile {args.uc_wait_profile} --uc-block-resources {args.uc_block_resources}"
+        )
         if args.max_pages > 0:
-            cmd += f' --max-pages {args.max_pages}'
-        if args.skip_vehicle_details.lower() == 'true':
-            cmd += f' --skip-vehicle-details true'
+            cmd += f" --max-pages {args.max_pages}"
+        if args.skip_vehicle_details.lower() == "true":
+            cmd += " --skip-vehicle-details true"
         procs.append(subprocess.Popen(["powershell", "-Command", cmd]))
 
-    for p in procs: p.wait()
-    wall_clock = time.time() - t0
+    for p in procs:
+        p.wait()
 
     run_dirs = []
     for i in range(args.shard_count):
         shard_data = os.path.join(args.output_root, f"shard_{i}")
-        rs = sorted(glob.glob(os.path.join(shard_data, "runs", "*")), key=os.path.getmtime, reverse=True)
-        if rs: run_dirs.append(rs[0])
+        rs = sorted(
+            glob.glob(os.path.join(shard_data, "runs", "*")),
+            key=os.path.getmtime,
+            reverse=True,
+        )
+        if rs:
+            run_dirs.append(rs[0])
 
     venv_python = os.path.join(base, "venv", "Scripts", "python.exe")
     if len(run_dirs) == args.shard_count:
-        p_merge = subprocess.run([venv_python, "tools/merge_runs.py", "--runs"] + run_dirs + ["--output", args.merge_output])
+        p_merge = subprocess.run(
+            [venv_python, "tools/merge_runs.py", "--runs"]
+            + run_dirs
+            + ["--output", args.merge_output],
+            check=False,
+        )
         print("Merge successful." if p_merge.returncode == 0 else "Merge failed.")
-    
     print(f"Merge output folder: {args.merge_output}")
+
 
 if __name__ == "__main__":
     main()

@@ -32,7 +32,9 @@ class FakeBrowser:
         return None
 
 
-def _make_scraper(mode: str = "discovered", traverse: bool = True, page_html: str = "") -> VehicleScraper:
+def _make_scraper(
+    mode: str = "discovered", traverse: bool = True, page_html: str = ""
+) -> VehicleScraper:
     config = ScraperConfig(
         category_traversal=mode,
         traverse_vehicle_categories=traverse,
@@ -52,12 +54,15 @@ def _html_with_categories(categories: list[tuple[str, str, int]]) -> str:
 
 # === discovered mode (default) ========================================
 
+
 def test_discovered_mode_returns_only_discovered_categories():
-    html = _html_with_categories([
-        ("Car", "Pkw", 12),
-        ("Motorbike", "Motorräder", 2),
-        ("Bus", "Busse", 0),
-    ])
+    html = _html_with_categories(
+        [
+            ("Car", "Pkw", 12),
+            ("Motorbike", "Motorräder", 2),
+            ("Bus", "Busse", 0),
+        ]
+    )
     scraper = _make_scraper("discovered", page_html=html)
 
     result = asyncio.run(scraper._category_sequence_from_current_page())
@@ -67,7 +72,9 @@ def test_discovered_mode_returns_only_discovered_categories():
 
 
 def test_discovered_mode_returns_none_when_no_categories_found():
-    scraper = _make_scraper("discovered", page_html="<html><body>No categories</body></html>")
+    scraper = _make_scraper(
+        "discovered", page_html="<html><body>No categories</body></html>"
+    )
 
     result = asyncio.run(scraper._category_sequence_from_current_page())
     assert result == [None]
@@ -82,10 +89,13 @@ def test_discovered_mode_does_not_append_hardcoded():
     # No hardcoded categories should be appended
     for hc in DEFAULT_VEHICLE_CATEGORY_VALUES:
         if hc != "Car":
-            assert hc not in result, f"Hardcoded category {hc} should NOT be in discovered-only result"
+            assert hc not in result, (
+                f"Hardcoded category {hc} should NOT be in discovered-only result"
+            )
 
 
 # === all mode =========================================================
+
 
 def test_all_mode_includes_hardcoded_categories():
     html = _html_with_categories([("Car", "Pkw", 1)])
@@ -108,6 +118,7 @@ def test_all_mode_fallback_when_no_categories_found():
 
 # === off mode =========================================================
 
+
 def test_off_mode_returns_none():
     scraper = _make_scraper("off")
     result = asyncio.run(scraper._category_sequence_from_current_page())
@@ -121,11 +132,13 @@ def test_legacy_traverse_false_returns_none():
 
 
 def test_only_car_one_discovered_only_car_is_visited():
-    html = _html_with_categories([
-        ("Car", "Pkw", 1),
-        ("Bus", "Busse", 0),
-        ("AgriculturalVehicle", "Agrarfahrzeuge", 0),
-    ])
+    html = _html_with_categories(
+        [
+            ("Car", "Pkw", 1),
+            ("Bus", "Busse", 0),
+            ("AgriculturalVehicle", "Agrarfahrzeuge", 0),
+        ]
+    )
     scraper = _make_scraper("discovered", page_html=html)
 
     result = asyncio.run(scraper._category_sequence_from_current_page())
@@ -170,15 +183,20 @@ def test_discovered_mode_parses_vehicle_category_sidebar_inputs_not_active_chip(
     assert result == ["VanUpTo7500", "SemiTrailer", "SemiTrailerTruck", "TruckOver7500"]
     assert "Trailer" not in result
     assert scraper.category_metadata["VanUpTo7500"]["source_category_count"] == 2
-    assert scraper.category_metadata["SemiTrailer"]["source_category_label"] == "Semi-trailer"
+    assert (
+        scraper.category_metadata["SemiTrailer"]["source_category_label"]
+        == "Semi-trailer"
+    )
 
 
 def test_collect_entries_logs_remaining_categories_skipped_at_vendor_limit(caplog):
-    html = _html_with_categories([
-        ("Car", "Pkw", 10),
-        ("VanUpTo7500", "Transporter", 3),
-        ("Motorbike", "Motorräder", 2),
-    ])
+    html = _html_with_categories(
+        [
+            ("Car", "Pkw", 10),
+            ("VanUpTo7500", "Transporter", 3),
+            ("Motorbike", "Motorräder", 2),
+        ]
+    )
     config = ScraperConfig(category_traversal="discovered", max_cars_per_vendor=5)
     browser = FakeBrowser(html)
     scraper = VehicleScraper(browser, config)
@@ -192,7 +210,9 @@ def test_collect_entries_logs_remaining_categories_skipped_at_vendor_limit(caplo
     scraper._collect_entries_from_loaded_inventory = fake_collect
     caplog.set_level(logging.INFO, logger="mobile_de.vehicle")
 
-    entries = asyncio.run(scraper.collect_vehicle_entries("https://home.mobile.de/ALPHA"))
+    entries = asyncio.run(
+        scraper.collect_vehicle_entries("https://home.mobile.de/ALPHA")
+    )
 
     assert len(entries) == 5
     assert browser.visited_urls == ["https://home.mobile.de/ALPHA?vc=Car"]
@@ -203,11 +223,13 @@ def test_collect_entries_logs_remaining_categories_skipped_at_vendor_limit(caplo
 
 
 def test_collect_entries_without_vendor_limit_visits_all_discovered_categories():
-    html = _html_with_categories([
-        ("Car", "Pkw", 10),
-        ("VanUpTo7500", "Transporter", 3),
-        ("Motorbike", "Motorräder", 2),
-    ])
+    html = _html_with_categories(
+        [
+            ("Car", "Pkw", 10),
+            ("VanUpTo7500", "Transporter", 3),
+            ("Motorbike", "Motorräder", 2),
+        ]
+    )
     config = ScraperConfig(category_traversal="discovered", max_cars_per_vendor=0)
     browser = FakeBrowser(html)
     scraper = VehicleScraper(browser, config)
@@ -217,7 +239,9 @@ def test_collect_entries_without_vendor_limit_visits_all_discovered_categories()
 
     scraper._collect_entries_from_loaded_inventory = fake_collect
 
-    entries = asyncio.run(scraper.collect_vehicle_entries("https://home.mobile.de/ALPHA"))
+    entries = asyncio.run(
+        scraper.collect_vehicle_entries("https://home.mobile.de/ALPHA")
+    )
 
     assert len(entries) == 3
     assert browser.visited_urls == [

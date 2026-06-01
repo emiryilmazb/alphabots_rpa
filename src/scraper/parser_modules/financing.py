@@ -1,14 +1,11 @@
 from __future__ import annotations
-import json
 import logging
 import re
-from collections.abc import Iterator
-from typing import Any
-from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
 from src.scraper.parser_modules.normalization import clean_text
-import logging
+
 logger = logging.getLogger(__name__)
+
 
 def parse_financing_data(html: str) -> dict[str, str]:
     """Extract financing information where available."""
@@ -36,17 +33,26 @@ def parse_financing_data(html: str) -> dict[str, str]:
     for label, key in labels.items():
         if key in financing:
             continue
-        match = re.search(rf"(?:^|\s){re.escape(label)}\s*[:]\s*([^|•]{{1,80}})", text, re.I)
+        match = re.search(
+            rf"(?:^|\s){re.escape(label)}\s*[:]\s*([^|•]{{1,80}})", text, re.I
+        )
         if match:
             financing[key] = clean_text(match.group(1))
 
     if "Financing" not in financing:
-        match = re.search(r"(?:Finanzierung|Rate)\s*(?:ab)?\s*(\d[\d.,]*\s*€\s*(?:mtl\.?|monatlich)?)", text, re.I)
+        match = re.search(
+            r"(?:Finanzierung|Rate)\s*(?:ab)?\s*(\d[\d.,]*\s*€\s*(?:mtl\.?|monatlich)?)",
+            text,
+            re.I,
+        )
         if match:
             financing["Financing"] = clean_text(match.group(1))
     return financing
 
-def _extract_financing_pairs(soup: BeautifulSoup, labels: dict[str, str], financing: dict[str, str]) -> None:
+
+def _extract_financing_pairs(
+    soup: BeautifulSoup, labels: dict[str, str], financing: dict[str, str]
+) -> None:
     lower = {label.lower(): key for label, key in labels.items()}
     for dt in soup.find_all("dt"):
         label = clean_text(dt.get_text(" ", strip=True)).rstrip(":")

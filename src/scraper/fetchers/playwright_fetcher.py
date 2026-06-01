@@ -16,7 +16,9 @@ class PlaywrightFetcher:
         self.config = config
         self.browser = browser
 
-    async def fetch(self, url: str, *, attempt: int = 1, max_retries: int | None = None) -> FetchResult:
+    async def fetch(
+        self, url: str, *, attempt: int = 1, max_retries: int | None = None
+    ) -> FetchResult:
         started = perf_counter()
         await self.browser.ensure_started()
         success = await self.browser.safe_goto(url, max_retries=max_retries)

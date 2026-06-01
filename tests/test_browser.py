@@ -99,7 +99,9 @@ def test_close_attempts_all_resources_when_page_close_fails():
     asyncio.run(run())
 
 
-def test_accept_cookies_clicks_visible_modal_verifies_dismissal_and_saves_state(tmp_path):
+def test_accept_cookies_clicks_visible_modal_verifies_dismissal_and_saves_state(
+    tmp_path,
+):
     class CookieButton:
         def __init__(self, page):
             self.page = page

@@ -56,7 +56,9 @@ class FakeHostChromeCdpFetcher:
 
 
 def test_host_chrome_strategy_parses_fake_cdp_html():
-    html = Path("tests/fixtures/html/vehicle_detail_complete.html").read_text(encoding="utf-8")
+    html = Path("tests/fixtures/html/vehicle_detail_complete.html").read_text(
+        encoding="utf-8"
+    )
     config = ScraperConfig(detail_open_strategy="host-chrome-cdp")
     scraper = VehicleScraper(browser=None, config=config)  # type: ignore[arg-type]
     fake_fetcher = FakeHostChromeCdpFetcher(html)

@@ -28,7 +28,9 @@ from src.scraper.parsers import (
 
 logger = logging.getLogger("mobile_de.fetchers.uc_popup")
 
-UC_DEPENDENCY_MESSAGE = "uc-popup strategy requires undetected_chromedriver and local Chrome."
+UC_DEPENDENCY_MESSAGE = (
+    "uc-popup strategy requires undetected_chromedriver and local Chrome."
+)
 DETAIL_ID_RE = re.compile(r"(?:[?&]id=|/)(\d{8,})(?:[&#/?]|$)")
 
 
@@ -57,31 +59,54 @@ class UcPopupResult:
     artifacts: UcPopupArtifacts = field(default_factory=UcPopupArtifacts)
 
 
-from src.scraper.fetchers.adaptive_wait import AdaptiveWaitSignals, AdaptiveWaitState, evaluate_detail_readiness
+from src.scraper.fetchers.adaptive_wait import (
+    AdaptiveWaitState,
+    evaluate_detail_readiness,
+)
 from src.domain.exceptions import DetailPageBlockedError
 
 
 def _collect_adaptive_wait_signals(driver):
     from src.scraper.fetchers.adaptive_wait import AdaptiveWaitSignals
+
     try:
         ready_state = str(driver.execute_script("return document.readyState;") or "")
         current_url = str(driver.current_url or "")
         title = str(driver.title or "")
         try:
-            body_text = str(driver.execute_script("return document.body.innerText;") or "")
+            body_text = str(
+                driver.execute_script("return document.body.innerText;") or ""
+            )
             if not body_text:
                 from selenium.webdriver.common.by import By
+
                 body_text = str(driver.find_element(By.TAG_NAME, "body").text or "")
         except Exception:
             body_text = ""
         return AdaptiveWaitSignals(
-            ready_state=ready_state, current_url=current_url, title=title,
-            body_text=body_text, body_length=len(body_text),
-            has_target_field=False, has_error_signal=False,
-            is_about_blank="about:blank" in current_url, is_mobile_domain="mobile.de" in current_url
+            ready_state=ready_state,
+            current_url=current_url,
+            title=title,
+            body_text=body_text,
+            body_length=len(body_text),
+            has_target_field=False,
+            has_error_signal=False,
+            is_about_blank="about:blank" in current_url,
+            is_mobile_domain="mobile.de" in current_url,
         )
     except Exception:
-        return AdaptiveWaitSignals("complete", "https://suchen.mobile.de", "", "", 1000, False, False, False, True)
+        return AdaptiveWaitSignals(
+            "complete",
+            "https://suchen.mobile.de",
+            "",
+            "",
+            1000,
+            False,
+            False,
+            False,
+            True,
+        )
+
 
 class UcPopupFetcher:
     """Open a live listing URL from a vendor/category page and capture the popup tab."""
@@ -144,16 +169,14 @@ class UcPopupFetcher:
         selected_url = ""
         live_links: list[LiveLink] = []
         try:
-            reuse_enabled = getattr(self.config, 'uc_reuse_browser', True)
-            use_cache = getattr(self.config, 'uc_link_cache', True)
-            
-            
-            
+            reuse_enabled = getattr(self.config, "uc_reuse_browser", True)
+            use_cache = getattr(self.config, "uc_link_cache", True)
+
             if reuse_enabled and self._driver:
                 if listing_url != self._listing_url:
                     self._increment("uc_browser_restarted_on_listing_change_count")
                     self.close()
-            
+
             if not self._driver:
                 self._driver = self._start_driver(uc)
                 self._increment("uc_browser_started_count")
@@ -161,15 +184,22 @@ class UcPopupFetcher:
                 self._driver.get(listing_url)
                 self._listing_url = listing_url
                 self._main_handle = self._driver.current_window_handle
-                
+
                 try:
-                    WebDriverWait(self._driver, 10).until(lambda d: d.execute_script("return document.readyState") in ["interactive", "complete"])
+                    WebDriverWait(self._driver, 10).until(
+                        lambda d: (
+                            d.execute_script("return document.readyState")
+                            in ["interactive", "complete"]
+                        )
+                    )
                 except Exception:
                     pass
                 time.sleep(0.5)
                 self._accept_cookies(self._driver)
                 self._settle_listing_page(self._driver)
-                self._live_links = self._collect_live_links(self._driver, By, max_live_links=max_live_links)
+                self._live_links = self._collect_live_links(
+                    self._driver, By, max_live_links=max_live_links
+                )
             else:
                 self._increment("uc_browser_reused_count")
                 try:
@@ -178,22 +208,37 @@ class UcPopupFetcher:
                 except Exception:
                     pass
                 if not use_cache or not self._live_links:
-                    self._live_links = self._collect_live_links(self._driver, By, max_live_links=max_live_links)
-            
+                    self._live_links = self._collect_live_links(
+                        self._driver, By, max_live_links=max_live_links
+                    )
+
             live_links = self._live_links
-            selected_url = self._select_live_link(vehicle_url, live_links, allow_unmatched_first=allow_unmatched_first)
-            
+            selected_url = self._select_live_link(
+                vehicle_url, live_links, allow_unmatched_first=allow_unmatched_first
+            )
+
             if not selected_url:
                 self._increment("stale_redirect_count")
                 self._increment("uc_popup_skipped_no_live_link_count")
-                return self._failure(vehicle_url, "stale_or_not_visible", "Detail URL not in live links.", started, selected_url="", live_links=live_links)
+                return self._failure(
+                    vehicle_url,
+                    "stale_or_not_visible",
+                    "Detail URL not in live links.",
+                    started,
+                    selected_url="",
+                    live_links=live_links,
+                )
 
             old_handles = set(self._driver.window_handles)
             self._increment("popup_opened_count")
             self._increment("uc_detail_tabs_opened_count")
-            self._driver.execute_script("window.open(arguments[0], '_blank');", selected_url)
+            self._driver.execute_script(
+                "window.open(arguments[0], '_blank');", selected_url
+            )
 
-            new_handle = self._wait_for_new_handle(self._driver, old_handles, timeout_seconds=5)
+            new_handle = self._wait_for_new_handle(
+                self._driver, old_handles, timeout_seconds=5
+            )
             captured_handle = ""
             if new_handle:
                 captured_handle = new_handle
@@ -204,7 +249,14 @@ class UcPopupFetcher:
                     self._increment("wrong_tab_capture_count")
                 if clean_text(self._driver.current_url) == clean_text(listing_url):
                     self._increment("popup_capture_failed_count")
-                    return self._failure(vehicle_url, "popup_capture_failed", "No new tab captured.", started, selected_url=selected_url, live_links=live_links)
+                    return self._failure(
+                        vehicle_url,
+                        "popup_capture_failed",
+                        "No new tab captured.",
+                        started,
+                        selected_url=selected_url,
+                        live_links=live_links,
+                    )
                 captured_handle = self._driver.current_window_handle
 
             self._wait_for_detail_dom(self._driver, WebDriverWait)
@@ -212,11 +264,22 @@ class UcPopupFetcher:
             title = self._driver.title
             html = self._driver.page_source or ""
             classification = classify_detail_page(html, final_url, title)
-            
-            artifacts_mode = getattr(self.config, 'detail_artifacts_mode', 'errors')
+
+            artifacts_mode = getattr(self.config, "detail_artifacts_mode", "errors")
             is_error = classification.classification != "real_detail_page"
-            if artifacts_mode == 'all' or (artifacts_mode == 'errors' and is_error) or getattr(self.config, 'save_debug_artifacts', False):
-                artifacts = self._save_artifacts(output_dir, requested_url=vehicle_url, final_url=final_url, title=title, html=html, driver=self._driver)
+            if (
+                artifacts_mode == "all"
+                or (artifacts_mode == "errors" and is_error)
+                or getattr(self.config, "save_debug_artifacts", False)
+            ):
+                artifacts = self._save_artifacts(
+                    output_dir,
+                    requested_url=vehicle_url,
+                    final_url=final_url,
+                    title=title,
+                    html=html,
+                    driver=self._driver,
+                )
 
             self._record_classification_metrics(classification.classification)
 
@@ -229,7 +292,17 @@ class UcPopupFetcher:
 
             if captured_handle in old_handles and new_handle:
                 self._increment("wrong_tab_capture_count")
-                return self._failure(vehicle_url, "wrong_tab_capture", "A popup opened, but capture remained on a pre-existing tab.", started, selected_url=selected_url, live_links=live_links, final_url=final_url, html=html, artifacts=artifacts)
+                return self._failure(
+                    vehicle_url,
+                    "wrong_tab_capture",
+                    "A popup opened, but capture remained on a pre-existing tab.",
+                    started,
+                    selected_url=selected_url,
+                    live_links=live_links,
+                    final_url=final_url,
+                    html=html,
+                    artifacts=artifacts,
+                )
 
             if is_error:
                 reason = classification.reason or classification.classification
@@ -237,21 +310,69 @@ class UcPopupFetcher:
                     self._increment("stale_redirect_count")
                 self._increment("uc_popup_failed_count")
                 return UcPopupResult(
-                    fetch_result=FetchResult(url=vehicle_url, final_url=final_url, html=html, strategy="uc-popup", browser="undetected_chromedriver", elapsed_ms=(time.perf_counter() - started) * 1000, error_type=classification.classification, error_message=reason, classification=classification.classification, detail_status=classification.classification, failure_reason=reason, screenshot_path=artifacts.screenshot_path, html_dump_path=artifacts.html_path, visible_text_path=artifacts.visible_text_path, extracted_fields_path=artifacts.extracted_fields_path),
-                    selected_url=selected_url, live_links=live_links, final_title=title, artifacts=artifacts)
+                    fetch_result=FetchResult(
+                        url=vehicle_url,
+                        final_url=final_url,
+                        html=html,
+                        strategy="uc-popup",
+                        browser="undetected_chromedriver",
+                        elapsed_ms=(time.perf_counter() - started) * 1000,
+                        error_type=classification.classification,
+                        error_message=reason,
+                        classification=classification.classification,
+                        detail_status=classification.classification,
+                        failure_reason=reason,
+                        screenshot_path=artifacts.screenshot_path,
+                        html_dump_path=artifacts.html_path,
+                        visible_text_path=artifacts.visible_text_path,
+                        extracted_fields_path=artifacts.extracted_fields_path,
+                    ),
+                    selected_url=selected_url,
+                    live_links=live_links,
+                    final_title=title,
+                    artifacts=artifacts,
+                )
 
             self._increment("detail_page_loaded_count")
             self._increment("real_detail_page_loaded_count")
             self._increment("uc_popup_success_count")
             return UcPopupResult(
-                fetch_result=FetchResult(url=vehicle_url, final_url=final_url, html=html, strategy="uc-popup", browser="undetected_chromedriver", elapsed_ms=(time.perf_counter() - started) * 1000, classification=classification.classification, detail_status=classification.classification, screenshot_path=artifacts.screenshot_path, html_dump_path=artifacts.html_path, visible_text_path=artifacts.visible_text_path, extracted_fields_path=artifacts.extracted_fields_path),
-                selected_url=selected_url, live_links=live_links, final_title=title, artifacts=artifacts)
+                fetch_result=FetchResult(
+                    url=vehicle_url,
+                    final_url=final_url,
+                    html=html,
+                    strategy="uc-popup",
+                    browser="undetected_chromedriver",
+                    elapsed_ms=(time.perf_counter() - started) * 1000,
+                    classification=classification.classification,
+                    detail_status=classification.classification,
+                    screenshot_path=artifacts.screenshot_path,
+                    html_dump_path=artifacts.html_path,
+                    visible_text_path=artifacts.visible_text_path,
+                    extracted_fields_path=artifacts.extracted_fields_path,
+                ),
+                selected_url=selected_url,
+                live_links=live_links,
+                final_title=title,
+                artifacts=artifacts,
+            )
 
         except Exception as exc:
-            logger.exception("UC popup detail fetch failed for %s: %s", vehicle_url, exc)
-            return self._failure(vehicle_url, "uc_popup_exception", str(exc), started, selected_url=selected_url, live_links=live_links, artifacts=artifacts, error_type=exc.__class__.__name__)
+            logger.exception(
+                "UC popup detail fetch failed for %s: %s", vehicle_url, exc
+            )
+            return self._failure(
+                vehicle_url,
+                "uc_popup_exception",
+                str(exc),
+                started,
+                selected_url=selected_url,
+                live_links=live_links,
+                artifacts=artifacts,
+                error_type=exc.__class__.__name__,
+            )
         finally:
-            reuse_enabled = getattr(self.config, 'uc_reuse_browser', True)
+            reuse_enabled = getattr(self.config, "uc_reuse_browser", True)
             if not reuse_enabled:
                 self.close()
 
@@ -302,18 +423,28 @@ class UcPopupFetcher:
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--no-sandbox")
         import os
+
         if os.environ.get("UC_BLOCK_RESOURCES", "false").lower() == "true":
-            options.add_experimental_option("prefs", {"profile.managed_default_content_settings.images": 2})
+            options.add_experimental_option(
+                "prefs", {"profile.managed_default_content_settings.images": 2}
+            )
             options.add_argument("--blink-settings=imagesEnabled=false")
         import os
+
         if os.environ.get("UC_BLOCK_RESOURCES", "false").lower() == "true":
-            options.add_experimental_option("prefs", {"profile.managed_default_content_settings.images": 2})
+            options.add_experimental_option(
+                "prefs", {"profile.managed_default_content_settings.images": 2}
+            )
             options.add_argument("--blink-settings=imagesEnabled=false")
         if getattr(self.config, "uc_block_resources", False):
-            options.add_experimental_option("prefs", {"profile.managed_default_content_settings.images": 2})
+            options.add_experimental_option(
+                "prefs", {"profile.managed_default_content_settings.images": 2}
+            )
             options.add_argument("--blink-settings=imagesEnabled=false")
-        if getattr(self.config, 'uc_block_resources', False):
-            options.add_experimental_option("prefs", {"profile.managed_default_content_settings.images": 2})
+        if getattr(self.config, "uc_block_resources", False):
+            options.add_experimental_option(
+                "prefs", {"profile.managed_default_content_settings.images": 2}
+            )
             options.add_argument("--blink-settings=imagesEnabled=false")
         if self.config.browser_mode == "headless":
             options.add_argument("--headless=new")
@@ -331,9 +462,27 @@ class UcPopupFetcher:
             return registry_version
         candidates = [
             os.getenv("CHROME_PATH", ""),
-            os.path.join(os.getenv("PROGRAMFILES", ""), "Google", "Chrome", "Application", "chrome.exe"),
-            os.path.join(os.getenv("PROGRAMFILES(X86)", ""), "Google", "Chrome", "Application", "chrome.exe"),
-            os.path.join(os.getenv("LOCALAPPDATA", ""), "Google", "Chrome", "Application", "chrome.exe"),
+            os.path.join(
+                os.getenv("PROGRAMFILES", ""),
+                "Google",
+                "Chrome",
+                "Application",
+                "chrome.exe",
+            ),
+            os.path.join(
+                os.getenv("PROGRAMFILES(X86)", ""),
+                "Google",
+                "Chrome",
+                "Application",
+                "chrome.exe",
+            ),
+            os.path.join(
+                os.getenv("LOCALAPPDATA", ""),
+                "Google",
+                "Chrome",
+                "Application",
+                "chrome.exe",
+            ),
             "google-chrome",
             "google-chrome-stable",
             "chromium",
@@ -350,7 +499,9 @@ class UcPopupFetcher:
                 )
             except Exception:
                 continue
-            match = re.search(r"(\d{2,3})\.", (completed.stdout or completed.stderr or ""))
+            match = re.search(
+                r"(\d{2,3})\.", (completed.stdout or completed.stderr or "")
+            )
             if match:
                 return match.group(1)
         return ""
@@ -372,8 +523,17 @@ class UcPopupFetcher:
         return ""
 
     def _listing_source_url(self, fallback: dict[str, Any]) -> str:
-        for key in ["source_category_url", "Vehicle_Category_URL", "source_vendor_url", "vendor_url"]:
-            value = normalize_vehicle_url(str(fallback.get(key, ""))) if key == "Vehicle_URL" else clean_text(fallback.get(key, ""))
+        for key in [
+            "source_category_url",
+            "Vehicle_Category_URL",
+            "source_vendor_url",
+            "vendor_url",
+        ]:
+            value = (
+                normalize_vehicle_url(str(fallback.get(key, "")))
+                if key == "Vehicle_URL"
+                else clean_text(fallback.get(key, ""))
+            )
             if value:
                 return value
         return ""
@@ -406,7 +566,9 @@ class UcPopupFetcher:
                 break
             time.sleep(1)
 
-    def _collect_live_links(self, driver, By, *, max_live_links: int = 25) -> list[LiveLink]:
+    def _collect_live_links(
+        self, driver, By, *, max_live_links: int = 25
+    ) -> list[LiveLink]:
         links: list[LiveLink] = []
         seen: set[str] = set()
         for element in driver.find_elements(By.TAG_NAME, "a"):
@@ -419,7 +581,11 @@ class UcPopupFetcher:
                 if not url or not vehicle_id or url in seen:
                     continue
                 seen.add(url)
-                links.append(LiveLink(url=url, vehicle_id=vehicle_id, text=clean_text(element.text)))
+                links.append(
+                    LiveLink(
+                        url=url, vehicle_id=vehicle_id, text=clean_text(element.text)
+                    )
+                )
                 if len(links) >= max_live_links:
                     break
             except Exception:
@@ -434,7 +600,9 @@ class UcPopupFetcher:
                 if not url or not vehicle_id or url in seen:
                     continue
                 seen.add(url)
-                links.append(LiveLink(url=url, vehicle_id=vehicle_id, text="live_page_payload"))
+                links.append(
+                    LiveLink(url=url, vehicle_id=vehicle_id, text="live_page_payload")
+                )
                 if len(links) >= max_live_links:
                     break
         except Exception as exc:
@@ -461,7 +629,9 @@ class UcPopupFetcher:
             return live_links[0].url
         return ""
 
-    def _wait_for_new_handle(self, driver, old_handles: set[str], *, timeout_seconds: int) -> str:
+    def _wait_for_new_handle(
+        self, driver, old_handles: set[str], *, timeout_seconds: int
+    ) -> str:
         deadline = time.time() + timeout_seconds
         while time.time() < deadline:
             current = set(driver.window_handles)
@@ -474,12 +644,15 @@ class UcPopupFetcher:
     def _wait_for_detail_dom(self, driver, WebDriverWait) -> None:
         try:
             WebDriverWait(driver, 10).until(
-                lambda current: current.execute_script("return document.readyState") in {"interactive", "complete"}
+                lambda current: (
+                    current.execute_script("return document.readyState")
+                    in {"interactive", "complete"}
+                )
             )
         except Exception:
             pass
-        wait_profile = getattr(self.config, 'uc_wait_profile', 'safe')
-        if wait_profile == 'adaptive':
+        wait_profile = getattr(self.config, "uc_wait_profile", "safe")
+        if wait_profile == "adaptive":
             elapsed_ms = 0
             self._increment("adaptive_wait_used_count")
             while elapsed_ms < 4000:
@@ -494,8 +667,11 @@ class UcPopupFetcher:
                     max_ms = int(getattr(self.config, "adaptive_wait_max_ms", 0) or 0)
                     if elapsed_ms > max_ms:
                         setattr(self.config, "adaptive_wait_max_ms", elapsed_ms)
-                    raise DetailPageBlockedError(f"Adaptive wait block: {decision.reason}")
+                    raise DetailPageBlockedError(
+                        f"Adaptive wait block: {decision.reason}"
+                    )
                 import time
+
                 time.sleep(0.1)
                 elapsed_ms += 100
             else:
@@ -506,6 +682,7 @@ class UcPopupFetcher:
                 setattr(self.config, "adaptive_wait_max_ms", elapsed_ms)
         else:
             import time
+
             time.sleep(1)
 
     def _save_artifacts(

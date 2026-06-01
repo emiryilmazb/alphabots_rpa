@@ -73,7 +73,9 @@ class FetchStrategyManager:
                 max_retries=playwright_max_retries,
             )
 
-        return await self._fetch_playwright(url, fallback_reason="", max_retries=playwright_max_retries)
+        return await self._fetch_playwright(
+            url, fallback_reason="", max_retries=playwright_max_retries
+        )
 
     async def _fetch_playwright(
         self,

@@ -58,9 +58,13 @@ def validate_dashboard(
         print(f"Error: Missing required sheets: {missing_sheets}")
         all_passed = False
 
-    vehicle_sheet = next((name for name in VEHICLE_SHEET_CANDIDATES if name in sheets), "")
+    vehicle_sheet = next(
+        (name for name in VEHICLE_SHEET_CANDIDATES if name in sheets), ""
+    )
     if not vehicle_sheet:
-        print(f"Error: No vehicle sheet found (looked for {', '.join(VEHICLE_SHEET_CANDIDATES)})")
+        print(
+            f"Error: No vehicle sheet found (looked for {', '.join(VEHICLE_SHEET_CANDIDATES)})"
+        )
         all_passed = False
 
     if not all_passed:
@@ -89,17 +93,23 @@ def validate_dashboard(
     all_passed &= _validate_non_empty("Requirements_Compliance", req_comp_df)
 
     all_passed &= _validate_columns("Vendors", vendors_df, VENDOR_COLUMNS)
-    vehicle_required = list(dict.fromkeys([*VEHICLE_REQUIRED_FIELDS, *FINANCING_REQUIRED_FIELDS]))
+    vehicle_required = list(
+        dict.fromkeys([*VEHICLE_REQUIRED_FIELDS, *FINANCING_REQUIRED_FIELDS])
+    )
     all_passed &= _validate_columns(vehicle_sheet, vehicles_df, vehicle_required)
     all_passed &= _validate_columns(vehicle_sheet, vehicles_df, CLASSIFICATION_COLUMNS)
     all_passed &= _validate_classifications(vehicles_df)
 
     if all_passed:
-        print("Excel structure, required columns, row thresholds, and classification values are valid.")
+        print(
+            "Excel structure, required columns, row thresholds, and classification values are valid."
+        )
     return bool(all_passed)
 
 
-def _validate_rows(name: str, count: int, *, minimum: int, expected: int | None) -> bool:
+def _validate_rows(
+    name: str, count: int, *, minimum: int, expected: int | None
+) -> bool:
     if expected is not None and count != expected:
         print(f"Error: Expected exactly {expected} rows in {name}, got {count}")
         return False
@@ -136,7 +146,9 @@ def _validate_classifications(vehicles_df: pd.DataFrame) -> bool:
         lowered = {value.lower() for value in values}
         bad_values = sorted(DISALLOWED_CLASSIFICATION_VALUES & lowered)
         if bad_values:
-            print(f"Error: Found disallowed literal classification values in {column}: {bad_values}")
+            print(
+                f"Error: Found disallowed literal classification values in {column}: {bad_values}"
+            )
             all_passed = False
         if "Andere" in set(values):
             print(f"Verified 'Andere' fallback can appear in {column} (OK)")
@@ -151,12 +163,30 @@ if __name__ == "__main__":
         default="output/mobile_de_nrw_dashboard.xlsx",
         help="Path to the dashboard Excel file",
     )
-    parser.add_argument("--min-vendors", type=int, default=1, help="Minimum accepted vendor rows")
-    parser.add_argument("--min-vehicles", type=int, default=1, help="Minimum accepted vehicle rows")
-    parser.add_argument("--expected-vendors", type=int, default=None, help="Optional exact vendor row count")
-    parser.add_argument("--expected-vehicles", type=int, default=None, help="Optional exact vehicle row count")
-    parser.add_argument("--vendors", type=int, dest="expected_vendors", help=argparse.SUPPRESS)
-    parser.add_argument("--vehicles", type=int, dest="expected_vehicles", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--min-vendors", type=int, default=1, help="Minimum accepted vendor rows"
+    )
+    parser.add_argument(
+        "--min-vehicles", type=int, default=1, help="Minimum accepted vehicle rows"
+    )
+    parser.add_argument(
+        "--expected-vendors",
+        type=int,
+        default=None,
+        help="Optional exact vendor row count",
+    )
+    parser.add_argument(
+        "--expected-vehicles",
+        type=int,
+        default=None,
+        help="Optional exact vehicle row count",
+    )
+    parser.add_argument(
+        "--vendors", type=int, dest="expected_vendors", help=argparse.SUPPRESS
+    )
+    parser.add_argument(
+        "--vehicles", type=int, dest="expected_vehicles", help=argparse.SUPPRESS
+    )
     args = parser.parse_args()
 
     if validate_dashboard(

@@ -43,10 +43,21 @@ def test_single_writer_persists_records_and_errors(tmp_path):
             {
                 "kind": "vehicle_done",
                 "url": "synthetic://vehicle-1",
-                "vehicle": {"run_id": "run-1", "Händler ID": "C0000001", "Vehicle_URL": "synthetic://vehicle-1"},
+                "vehicle": {
+                    "run_id": "run-1",
+                    "Händler ID": "C0000001",
+                    "Vehicle_URL": "synthetic://vehicle-1",
+                },
             }
         )
-        await queue.put({"kind": "error", "stage": "vehicle", "url": "synthetic://bad", "error": "boom"})
+        await queue.put(
+            {
+                "kind": "error",
+                "stage": "vehicle",
+                "url": "synthetic://bad",
+                "error": "boom",
+            }
+        )
         await queue.put(None)
         await queue.join()
         await task
@@ -87,7 +98,11 @@ def test_run_concurrent_pipeline_with_mocked_workers(monkeypatch, tmp_path):
                     "Mobile.de_Links": job.normalized_vendor_url,
                 }
                 await self.writer_queue.put(
-                    {"kind": "vendor_done", "url": job.normalized_vendor_url, "vendor": vendor}
+                    {
+                        "kind": "vendor_done",
+                        "url": job.normalized_vendor_url,
+                        "vendor": vendor,
+                    }
                 )
                 vehicle_jobs = await self.state.queue_vehicle_jobs(
                     self.run_id,
@@ -145,7 +160,10 @@ def test_run_concurrent_pipeline_with_mocked_workers(monkeypatch, tmp_path):
         )
     )
 
-    assert [vendor["Händler ID"] for vendor in result.vendors] == ["C0000001", "C0000002"]
+    assert [vendor["Händler ID"] for vendor in result.vendors] == [
+        "C0000001",
+        "C0000002",
+    ]
     assert {vehicle["Vehicle_URL"] for vehicle in result.vehicles} == {
         "synthetic://C0000001",
         "synthetic://C0000002",
@@ -182,7 +200,10 @@ def test_regional_producer_enqueues_only_limited_dealers(monkeypatch, tmp_path):
 
         async def collect_dealer_entries(self):
             return [
-                {"url": f"https://home.mobile.de/DEALER{i:02d}", "name": f"Dealer {i:02d}"}
+                {
+                    "url": f"https://home.mobile.de/DEALER{i:02d}",
+                    "name": f"Dealer {i:02d}",
+                }
                 for i in range(5)
             ]
 
@@ -191,7 +212,9 @@ def test_regional_producer_enqueues_only_limited_dealers(monkeypatch, tmp_path):
         monkeypatch.setattr(pipeline, "RegionalScraper", FakeRegionalScraper)
         store = StateStore(tmp_path / "producer.sqlite3")
         await store.connect()
-        await store.start_run("run-1", ScraperConfig(project_root=tmp_path, max_vendors=5))
+        await store.start_run(
+            "run-1", ScraperConfig(project_root=tmp_path, max_vendors=5)
+        )
         queue = asyncio.Queue()
         producer = pipeline.RegionalDiscoveryProducer(
             ScraperConfig(project_root=tmp_path, max_vendors=5),
@@ -231,7 +254,9 @@ def test_state_store_pending_and_exports_are_scoped_to_run_id(tmp_path):
                 "Mobile.de_Links": old_jobs[0].normalized_vendor_url,
             },
         )
-        await store.start_run("new-run", ScraperConfig(project_root=tmp_path, max_vendors=5))
+        await store.start_run(
+            "new-run", ScraperConfig(project_root=tmp_path, max_vendors=5)
+        )
         pending_before = await store.pending_vendor_jobs("new-run", limit=5)
         new_jobs = await store.queue_vendor_jobs(
             "new-run",
@@ -246,7 +271,9 @@ def test_state_store_pending_and_exports_are_scoped_to_run_id(tmp_path):
         await store.close()
         return pending_before, new_jobs, pending_after, old_exports, new_exports
 
-    pending_before, new_jobs, pending_after, old_exports, new_exports = asyncio.run(run())
+    pending_before, new_jobs, pending_after, old_exports, new_exports = asyncio.run(
+        run()
+    )
 
     assert pending_before == []
     assert len(new_jobs) == 5
@@ -283,14 +310,22 @@ def test_vehicle_worker_retries_target_closed_once(monkeypatch):
             nonlocal calls
             calls += 1
             if calls == 1:
-                raise TargetClosedError("Target page, context or browser has been closed")
+                raise TargetClosedError(
+                    "Target page, context or browser has been closed"
+                )
             await worker.writer_queue.put(
-                {"kind": "vehicle_done", "url": job.vehicle_url, "vehicle": {"Vehicle_URL": job.vehicle_url}}
+                {
+                    "kind": "vehicle_done",
+                    "url": job.vehicle_url,
+                    "vehicle": {"Vehicle_URL": job.vehicle_url},
+                }
             )
 
         monkeypatch.setattr(worker, "_process_job", fake_process_job)
         browser = FakeBrowser()
-        job = VehicleJob("synthetic://vehicle", "https://home.mobile.de/ALPHA", "C0000001", {}, {})
+        job = VehicleJob(
+            "synthetic://vehicle", "https://home.mobile.de/ALPHA", "C0000001", {}, {}
+        )
 
         await worker._process_job_with_recovery(job, browser, vehicle_scraper=object())
 
@@ -339,7 +374,10 @@ def test_vehicle_worker_records_detail_fetch_failure_and_uses_fallback():
             "https://home.mobile.de/ALPHA",
             "C0000001",
             {"Händler ID": "C0000001"},
-            {"Vehicle_URL": "https://suchen.mobile.de/fahrzeuge/details.html?id=1", "Markes": "VW"},
+            {
+                "Vehicle_URL": "https://suchen.mobile.de/fahrzeuge/details.html?id=1",
+                "Markes": "VW",
+            },
         )
         await worker._process_job(job, FakeBrowser(), FakeScraper())
         events = []

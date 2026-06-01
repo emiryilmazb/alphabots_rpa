@@ -1,11 +1,42 @@
-class MobileDeScraperError(Exception): pass
-class ConfigError(MobileDeScraperError): pass
-class SourceUnavailableError(MobileDeScraperError): pass
-class BrowserError(MobileDeScraperError): pass
-class DetailFetchError(MobileDeScraperError): pass
-class DetailPageBlockedError(DetailFetchError): pass
-class DetailPageRedirectError(DetailFetchError): pass
-class ParserError(MobileDeScraperError): pass
-class ShardError(MobileDeScraperError): pass
-class MergeError(MobileDeScraperError): pass
-class OutputGenerationError(MobileDeScraperError): pass
+class MobileDeScraperError(Exception):
+    pass
+
+
+class ConfigError(MobileDeScraperError):
+    pass
+
+
+class SourceUnavailableError(MobileDeScraperError):
+    pass
+
+
+class BrowserError(MobileDeScraperError):
+    pass
+
+
+class DetailFetchError(MobileDeScraperError):
+    pass
+
+
+class DetailPageBlockedError(DetailFetchError):
+    pass
+
+
+class DetailPageRedirectError(DetailFetchError):
+    pass
+
+
+class ParserError(MobileDeScraperError):
+    pass
+
+
+class ShardError(MobileDeScraperError):
+    pass
+
+
+class MergeError(MobileDeScraperError):
+    pass
+
+
+class OutputGenerationError(MobileDeScraperError):
+    pass

@@ -9,13 +9,19 @@ import pandas as pd
 logger = logging.getLogger("mobile_de.dashboard")
 
 
-def prepare_dashboard(df_v: pd.DataFrame, df_c: pd.DataFrame) -> dict[str, pd.DataFrame]:
+def prepare_dashboard(
+    df_v: pd.DataFrame, df_c: pd.DataFrame
+) -> dict[str, pd.DataFrame]:
     """Prepare all dashboard-ready tables."""
     result: dict[str, pd.DataFrame] = {}
     result["vendor_summary"] = _vendor_summary(df_v, df_c)
     result["manufacturer_summary"] = _value_summary(df_c, "Markes", "Manufacturer")
-    result["category_summary"] = _value_summary(df_c, _first_existing(df_c, ["vehicle_category", "Fahrzeug_Klasse"]), "Category")
-    result["origin_summary"] = _value_summary(df_c, _first_existing(df_c, ["manufacturer_origin", "Herkunftsland"]), "Origin")
+    result["category_summary"] = _value_summary(
+        df_c, _first_existing(df_c, ["vehicle_category", "Fahrzeug_Klasse"]), "Category"
+    )
+    result["origin_summary"] = _value_summary(
+        df_c, _first_existing(df_c, ["manufacturer_origin", "Herkunftsland"]), "Origin"
+    )
     result["category_manufacturer_summary"] = _category_by_manufacturer(df_c)
     result["best_deals"] = _compute_deals(df_c, best=True)
     result["worst_deals"] = _compute_deals(df_c, best=False)
@@ -41,20 +47,28 @@ def _vendor_summary(df_v: pd.DataFrame, df_c: pd.DataFrame) -> pd.DataFrame:
     vendors = df_v.copy()
     scraped = pd.DataFrame(columns=["Händler ID", "Scraped_Vehicle_Count"])
     if not df_c.empty and "Händler ID" in df_c.columns:
-        scraped = df_c.groupby("Händler ID").size().reset_index(name="Scraped_Vehicle_Count")
+        scraped = (
+            df_c.groupby("Händler ID").size().reset_index(name="Scraped_Vehicle_Count")
+        )
 
     vendors = vendors.merge(scraped, on="Händler ID", how="left")
-    vendors["Scraped_Vehicle_Count"] = pd.to_numeric(
-        vendors["Scraped_Vehicle_Count"], errors="coerce"
-    ).fillna(0).astype(int)
+    vendors["Scraped_Vehicle_Count"] = (
+        pd.to_numeric(vendors["Scraped_Vehicle_Count"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
     vendors["Total_Vehicle_Count"] = pd.to_numeric(
         vendors.get("Anzahl der Fahrzeuge"), errors="coerce"
     ).fillna(vendors["Scraped_Vehicle_Count"])
     available = [col for col in columns if col in vendors.columns]
-    return vendors[available].sort_values(
-        ["Total_Vehicle_Count", "Scraped_Vehicle_Count", "Händlername"],
-        ascending=[False, False, True],
-    ).reset_index(drop=True)
+    return (
+        vendors[available]
+        .sort_values(
+            ["Total_Vehicle_Count", "Scraped_Vehicle_Count", "Händlername"],
+            ascending=[False, False, True],
+        )
+        .reset_index(drop=True)
+    )
 
 
 def _value_summary(df: pd.DataFrame, source_col: str, out_col: str) -> pd.DataFrame:
@@ -110,14 +124,28 @@ def _compute_deals(df: pd.DataFrame, *, best: bool) -> pd.DataFrame:
         "Vehicle_URL",
     ]
     if df.empty:
-        return pd.DataFrame(columns=cols + ["Deal_Score", "Metric_Count", "Metric_Definition"])
+        return pd.DataFrame(
+            columns=cols + ["Deal_Score", "Metric_Count", "Metric_Definition"]
+        )
     work = df[[col for col in cols if col in df.columns]].copy()
 
     metrics: list[tuple[str, pd.Series, bool]] = [
         ("price", pd.to_numeric(work.get("Preis_EUR"), errors="coerce"), True),
-        ("mileage", pd.to_numeric(work.get("Kilometerstand_km"), errors="coerce"), True),
-        ("registration_year", pd.to_numeric(work.get("EZ_Jahr"), errors="coerce"), False),
-        ("price_per_kw", pd.to_numeric(work.get("Preis_pro_kW"), errors="coerce"), True),
+        (
+            "mileage",
+            pd.to_numeric(work.get("Kilometerstand_km"), errors="coerce"),
+            True,
+        ),
+        (
+            "registration_year",
+            pd.to_numeric(work.get("EZ_Jahr"), errors="coerce"),
+            False,
+        ),
+        (
+            "price_per_kw",
+            pd.to_numeric(work.get("Preis_pro_kW"), errors="coerce"),
+            True,
+        ),
         ("co2", pd.to_numeric(work.get("CO2_gkm"), errors="coerce"), True),
     ]
     component_map = {
@@ -163,13 +191,23 @@ def _compute_efficient(df: pd.DataFrame) -> pd.DataFrame:
         "Vehicle_URL",
     ]
     if df.empty:
-        return pd.DataFrame(columns=cols + ["Efficiency_Score", "Metric_Count", "Metric_Definition"])
+        return pd.DataFrame(
+            columns=cols + ["Efficiency_Score", "Metric_Count", "Metric_Definition"]
+        )
     work = df[[col for col in cols if col in df.columns]].copy()
     metrics: list[tuple[str, pd.Series, bool]] = [
         ("co2", pd.to_numeric(work.get("CO2_gkm"), errors="coerce"), True),
-        ("mileage", pd.to_numeric(work.get("Kilometerstand_km"), errors="coerce"), True),
+        (
+            "mileage",
+            pd.to_numeric(work.get("Kilometerstand_km"), errors="coerce"),
+            True,
+        ),
         ("price", pd.to_numeric(work.get("Preis_EUR"), errors="coerce"), True),
-        ("registration_year", pd.to_numeric(work.get("EZ_Jahr"), errors="coerce"), False),
+        (
+            "registration_year",
+            pd.to_numeric(work.get("EZ_Jahr"), errors="coerce"),
+            False,
+        ),
     ]
     component_map = {
         "co2": "co2_score",
@@ -195,7 +233,9 @@ def _compute_efficient(df: pd.DataFrame) -> pd.DataFrame:
     return work.nsmallest(20, "Efficiency_Score").reset_index(drop=True)
 
 
-def _weighted_score(metrics: list[tuple[str, pd.Series, bool]]) -> tuple[pd.Series, pd.Series]:
+def _weighted_score(
+    metrics: list[tuple[str, pd.Series, bool]],
+) -> tuple[pd.Series, pd.Series]:
     index = metrics[0][1].index if metrics else pd.RangeIndex(0)
     score = pd.Series(0.0, index=index, dtype="float64")
     count = pd.Series(0, index=index, dtype="int64")

@@ -89,7 +89,9 @@ def test_chrome_launch_uses_channel():
 
 
 def test_artifact_base_name_is_filesystem_safe():
-    name = BrowserManager._artifact_base_name("https://example.test/a?b=1", "HTTP 403: blocked")
+    name = BrowserManager._artifact_base_name(
+        "https://example.test/a?b=1", "HTTP 403: blocked"
+    )
 
     assert re.fullmatch(r"[0-9]+-HTTP-403-blocked-[0-9a-f]{12}", name)
 
@@ -105,15 +107,36 @@ def test_detail_policy_uses_listing_data_before_detail_fetch():
         "Erstzulassung": "03/2024",
     }
 
-    assert should_fetch_vehicle_detail(ScraperConfig(detail_policy="missing-required"), url, complete) is False
-    assert should_fetch_vehicle_detail(ScraperConfig(detail_policy="always"), url, complete) is True
-    assert should_fetch_vehicle_detail(ScraperConfig(detail_policy="never"), url, {}) is False
-    assert should_fetch_vehicle_detail(ScraperConfig(detail_policy="financing-only"), url, complete) is True
-    assert should_fetch_vehicle_detail(
-        ScraperConfig(detail_policy="financing-only"),
-        url,
-        {**complete, "Finanzierung": "100 € mtl."},
-    ) is False
+    assert (
+        should_fetch_vehicle_detail(
+            ScraperConfig(detail_policy="missing-required"), url, complete
+        )
+        is False
+    )
+    assert (
+        should_fetch_vehicle_detail(
+            ScraperConfig(detail_policy="always"), url, complete
+        )
+        is True
+    )
+    assert (
+        should_fetch_vehicle_detail(ScraperConfig(detail_policy="never"), url, {})
+        is False
+    )
+    assert (
+        should_fetch_vehicle_detail(
+            ScraperConfig(detail_policy="financing-only"), url, complete
+        )
+        is True
+    )
+    assert (
+        should_fetch_vehicle_detail(
+            ScraperConfig(detail_policy="financing-only"),
+            url,
+            {**complete, "Finanzierung": "100 € mtl."},
+        )
+        is False
+    )
 
 
 def test_uc_popup_missing_required_policy_checks_detail_target_fields():
@@ -127,38 +150,53 @@ def test_uc_popup_missing_required_policy_checks_detail_target_fields():
         "Erstzulassung": "03/2024",
     }
 
-    assert should_fetch_vehicle_detail(
-        ScraperConfig(detail_policy="missing-required", detail_open_strategy="uc-popup"),
-        url,
-        basic_complete,
-    ) is True
-    assert should_fetch_vehicle_detail(
-        ScraperConfig(detail_policy="missing-required", detail_open_strategy="uc-popup"),
-        url,
-        {
-            **basic_complete,
-            "CO₂-Emissionen": "120 g/km",
-            "Baureihe": "8",
-            "Ausstattungslinie": "Life",
-            "Anzahl der Fahrzeughalter": "1",
-        },
-    ) is False
-    assert should_fetch_vehicle_detail(
-        ScraperConfig(detail_policy="missing-required", detail_open_strategy="uc-popup"),
-        url,
-        {
-            "Markes": "",
-            "Models": "",
-            "Fahrzeugtyp": "",
-            "Preis": "",
-            "Kilometerstand": "",
-            "Erstzulassung": "",
-            "CO₂-Emissionen": "120 g/km",
-            "Baureihe": "8",
-            "Ausstattungslinie": "Life",
-            "Anzahl der Fahrzeughalter": "1",
-        },
-    ) is False
+    assert (
+        should_fetch_vehicle_detail(
+            ScraperConfig(
+                detail_policy="missing-required", detail_open_strategy="uc-popup"
+            ),
+            url,
+            basic_complete,
+        )
+        is True
+    )
+    assert (
+        should_fetch_vehicle_detail(
+            ScraperConfig(
+                detail_policy="missing-required", detail_open_strategy="uc-popup"
+            ),
+            url,
+            {
+                **basic_complete,
+                "CO₂-Emissionen": "120 g/km",
+                "Baureihe": "8",
+                "Ausstattungslinie": "Life",
+                "Anzahl der Fahrzeughalter": "1",
+            },
+        )
+        is False
+    )
+    assert (
+        should_fetch_vehicle_detail(
+            ScraperConfig(
+                detail_policy="missing-required", detail_open_strategy="uc-popup"
+            ),
+            url,
+            {
+                "Markes": "",
+                "Models": "",
+                "Fahrzeugtyp": "",
+                "Preis": "",
+                "Kilometerstand": "",
+                "Erstzulassung": "",
+                "CO₂-Emissionen": "120 g/km",
+                "Baureihe": "8",
+                "Ausstattungslinie": "Life",
+                "Anzahl der Fahrzeughalter": "1",
+            },
+        )
+        is False
+    )
 
 
 def test_docker_image_version_matches_python_requirement():
@@ -167,7 +205,9 @@ def test_docker_image_version_matches_python_requirement():
     dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
     compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
 
-    requirement_version = re.search(r"^playwright==([0-9.]+)$", requirements, re.M).group(1)
+    requirement_version = re.search(
+        r"^playwright==([0-9.]+)$", requirements, re.M
+    ).group(1)
     docker_version = re.search(r"ARG PLAYWRIGHT_VERSION=([0-9.]+)", dockerfile).group(1)
 
     assert docker_version == requirement_version

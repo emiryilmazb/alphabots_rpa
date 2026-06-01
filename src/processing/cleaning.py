@@ -17,8 +17,9 @@ from src.models import VENDOR_COLUMNS, VEHICLE_COLUMNS
 logger = logging.getLogger("mobile_de.cleaning")
 
 
-def clean_dataframes(df_vendors: pd.DataFrame,
-                     df_cars: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def clean_dataframes(
+    df_vendors: pd.DataFrame, df_cars: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Clean and normalize both vendor and car DataFrames.
 
@@ -41,7 +42,9 @@ def _clean_vendors(df: pd.DataFrame) -> pd.DataFrame:
         df[col] = df[col].map(_normalize_string)
 
     if "Anzahl der Fahrzeuge" in df.columns:
-        df["Anzahl der Fahrzeuge"] = pd.to_numeric(df["Anzahl der Fahrzeuge"], errors="coerce")
+        df["Anzahl der Fahrzeuge"] = pd.to_numeric(
+            df["Anzahl der Fahrzeuge"], errors="coerce"
+        )
 
     return df
 
@@ -53,8 +56,12 @@ def _clean_cars(df: pd.DataFrame) -> pd.DataFrame:
         df[col] = df[col].map(_normalize_string)
 
     if "Finanzierung" in df.columns and "Financing" in df.columns:
-        df["Finanzierung"] = df["Finanzierung"].where(df["Finanzierung"].astype(str).str.strip() != "", df["Financing"])
-        df["Financing"] = df["Financing"].where(df["Financing"].astype(str).str.strip() != "", df["Finanzierung"])
+        df["Finanzierung"] = df["Finanzierung"].where(
+            df["Finanzierung"].astype(str).str.strip() != "", df["Financing"]
+        )
+        df["Financing"] = df["Financing"].where(
+            df["Financing"].astype(str).str.strip() != "", df["Finanzierung"]
+        )
 
     # ── Price → numeric EUR ─────────────────────────────────────────────
     df["Preis_EUR"] = df["Preis"].apply(_parse_price)
@@ -117,17 +124,20 @@ def _clean_cars(df: pd.DataFrame) -> pd.DataFrame:
 
     # ── Derived metrics ─────────────────────────────────────────────────
     # Price per kW
-    df["Preis_pro_kW"] = pd.to_numeric(df["Preis_EUR"], errors="coerce") / \
-                          pd.to_numeric(df["Leistung_kW"], errors="coerce")
+    df["Preis_pro_kW"] = pd.to_numeric(
+        df["Preis_EUR"], errors="coerce"
+    ) / pd.to_numeric(df["Leistung_kW"], errors="coerce")
 
     # Price per km (for deal scoring)
-    df["Preis_pro_km"] = pd.to_numeric(df["Preis_EUR"], errors="coerce") / \
-                          (pd.to_numeric(df["Kilometerstand_km"], errors="coerce") + 1)
+    df["Preis_pro_km"] = pd.to_numeric(df["Preis_EUR"], errors="coerce") / (
+        pd.to_numeric(df["Kilometerstand_km"], errors="coerce") + 1
+    )
 
     return df
 
 
 # ─── Parsing Helpers ──────────────────────────────────────────────────────────
+
 
 def _ensure_columns(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     """Ensure required columns exist and appear first."""
@@ -146,6 +156,7 @@ def _normalize_string(value) -> str:
     text = unicodedata.normalize("NFC", text)
     text = re.sub(r"\s+", " ", text).strip()
     return "" if text in {"nan", "None", "NaN", "<NA>"} else text
+
 
 def _parse_price(text: str) -> float | None:
     """
@@ -255,7 +266,11 @@ def _parse_percentage(text: str) -> float | None:
         return None
     m = re.search(r"([\d,.]+)\s*%", text)
     if m:
-        return float(m.group(1).replace(".", "").replace(",", ".") if "," in m.group(1) else m.group(1))
+        return float(
+            m.group(1).replace(".", "").replace(",", ".")
+            if "," in m.group(1)
+            else m.group(1)
+        )
     return None
 
 

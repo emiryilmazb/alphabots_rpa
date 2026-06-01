@@ -8,6 +8,7 @@ Classifies vehicles by:
 Manufacturer grouping follows the task-defined categories, not historical
 or legal corporate-origin definitions.
 """
+
 from __future__ import annotations
 import logging
 import pandas as pd
@@ -17,29 +18,61 @@ logger = logging.getLogger("mobile_de.classification")
 # ─── Vehicle Type Mapping ─────────────────────────────────────────────────────
 _TYPE_LISTS: dict[str, list[str]] = {
     "PKW": [
-        "PKW", "Pkw", "Car",
-        "Cabrio/Roadster", "Kleinwagen", "Kombi", "Limousine",
+        "PKW",
+        "Pkw",
+        "Car",
+        "Cabrio/Roadster",
+        "Kleinwagen",
+        "Kombi",
+        "Limousine",
         "Sportwagen/Coupé",
-        "SUV/Geländewagen/Pickup", "SUV/Off-road Vehicle/Pickup Truck",
-        "Van/Kleinbus", "Van/Minibus",
+        "SUV/Geländewagen/Pickup",
+        "SUV/Off-road Vehicle/Pickup Truck",
+        "Van/Kleinbus",
+        "Van/Minibus",
     ],
     "Motorrad": [
-        "Chopper/Cruiser", "Mofa/Mokick/Moped", "Rallye/Cross",
-        "Streetfighter", "Dirt Bike", "Motorrad", "Rennsport",
-        "Super Moto", "Enduro/Reiseenduro", "Naked Bike",
-        "Roller/Scooter", "Tourer", "Gespann/Seitenwagen",
-        "Pocket Bike", "Sportler/Supersportler", "Trike",
-        "Klein/Leichtkraftrad", "Quad", "Sporttourer",
+        "Chopper/Cruiser",
+        "Mofa/Mokick/Moped",
+        "Rallye/Cross",
+        "Streetfighter",
+        "Dirt Bike",
+        "Motorrad",
+        "Rennsport",
+        "Super Moto",
+        "Enduro/Reiseenduro",
+        "Naked Bike",
+        "Roller/Scooter",
+        "Tourer",
+        "Gespann/Seitenwagen",
+        "Pocket Bike",
+        "Sportler/Supersportler",
+        "Trike",
+        "Klein/Leichtkraftrad",
+        "Quad",
+        "Sporttourer",
     ],
     "Freizeitfahrzeuge": [
-        "Alkoven", "Mobilheim", "Wohnmobil andere", "Integrierter",
-        "Teilintegrierter", "Wohnmobil Pickup", "Kastenwagen",
-        "Wohnkabine", "Wohnwagen",
+        "Alkoven",
+        "Mobilheim",
+        "Wohnmobil andere",
+        "Integrierter",
+        "Teilintegrierter",
+        "Wohnmobil Pickup",
+        "Kastenwagen",
+        "Wohnkabine",
+        "Wohnwagen",
     ],
     "LKW": [
-        "Transporter und Lkw bis 7,5 t", "Lkw ab 7,5 t",
-        "Sattelzugmaschinen", "Anhänger", "Auflieger",
-        "Baumaschinen", "Busse", "Agrarfahrzeuge", "Stapler",
+        "Transporter und Lkw bis 7,5 t",
+        "Lkw ab 7,5 t",
+        "Sattelzugmaschinen",
+        "Anhänger",
+        "Auflieger",
+        "Baumaschinen",
+        "Busse",
+        "Agrarfahrzeuge",
+        "Stapler",
     ],
 }
 
@@ -53,24 +86,64 @@ for _cat, _types in _TYPE_LISTS.items():
 # Deutschland in the task description.
 _ORIGIN_LISTS: dict[str, list[str]] = {
     "Deutschland": [
-        "Audi", "Volkswagen", "VW", "Skoda", "Škoda", "Seat", "SEAT",
-        "Smart", "BMW", "Cupra", "Mini", "MINI",
-        "Mercedes-Benz", "Mercedes", "Porsche", "Volvo", "Opel", "Ford",
+        "Audi",
+        "Volkswagen",
+        "VW",
+        "Skoda",
+        "Škoda",
+        "Seat",
+        "SEAT",
+        "Smart",
+        "BMW",
+        "Cupra",
+        "Mini",
+        "MINI",
+        "Mercedes-Benz",
+        "Mercedes",
+        "Porsche",
+        "Volvo",
+        "Opel",
+        "Ford",
     ],
     "Italien": [
-        "Alfa Romeo", "Lancia", "Fiat", "Abarth",
-        "Maserati", "Ferrari", "Lamborghini",
+        "Alfa Romeo",
+        "Lancia",
+        "Fiat",
+        "Abarth",
+        "Maserati",
+        "Ferrari",
+        "Lamborghini",
     ],
     "Korea": [
-        "Hyundai", "SsangYong", "KGM", "Kia", "Genesis", "Daewoo",
+        "Hyundai",
+        "SsangYong",
+        "KGM",
+        "Kia",
+        "Genesis",
+        "Daewoo",
     ],
     "Japan": [
-        "Toyota", "Honda", "Nissan", "Mazda", "Mitsubishi", "Suzuki",
-        "Subaru", "Daihatsu", "Lexus", "Infiniti", "Isuzu",
+        "Toyota",
+        "Honda",
+        "Nissan",
+        "Mazda",
+        "Mitsubishi",
+        "Suzuki",
+        "Subaru",
+        "Daihatsu",
+        "Lexus",
+        "Infiniti",
+        "Isuzu",
     ],
     "Frankreich": [
-        "Peugeot", "Renault", "Citroën", "Citroen", "Dacia",
-        "DS Automobiles", "DS", "Alpine",
+        "Peugeot",
+        "Renault",
+        "Citroën",
+        "Citroen",
+        "Dacia",
+        "DS Automobiles",
+        "DS",
+        "Alpine",
     ],
 }
 
@@ -110,19 +183,33 @@ def classify_vehicle_type_details(
     source_key = _normalize_value(source_category).lower()
     key = normalized.lower()
 
-    if key == "kastenwagen" and source_key in SOURCE_CATEGORY_MAP and SOURCE_CATEGORY_MAP[source_key] == "LKW":
+    if (
+        key == "kastenwagen"
+        and source_key in SOURCE_CATEGORY_MAP
+        and SOURCE_CATEGORY_MAP[source_key] == "LKW"
+    ):
         return "LKW", normalized, 0.95, "source_category_override"
 
     if not key:
         if source_key in SOURCE_CATEGORY_MAP:
-            return SOURCE_CATEGORY_MAP[source_key], normalized, 0.90, "source_category_match"
+            return (
+                SOURCE_CATEGORY_MAP[source_key],
+                normalized,
+                0.90,
+                "source_category_match",
+            )
         return "Andere", normalized, 0.0, "unknown_to_andere"
 
     if key in VEHICLE_TYPE_MAP:
         return VEHICLE_TYPE_MAP[key], normalized, 1.0, "exact_task_match"
 
     if source_key in SOURCE_CATEGORY_MAP:
-        return SOURCE_CATEGORY_MAP[source_key], normalized, 0.90, "source_category_match"
+        return (
+            SOURCE_CATEGORY_MAP[source_key],
+            normalized,
+            0.90,
+            "source_category_match",
+        )
 
     for pattern, category in VEHICLE_TYPE_MAP.items():
         if pattern in key or key in pattern:
@@ -199,13 +286,19 @@ def classify_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             source_categories,
         )
     if "source_category_label" not in df.columns:
-        df["source_category_label"] = df.get("Vehicle_Category_Label", pd.Series("", index=df.index))
+        df["source_category_label"] = df.get(
+            "Vehicle_Category_Label", pd.Series("", index=df.index)
+        )
     if "source_category_url" not in df.columns:
-        df["source_category_url"] = df.get("Vehicle_Category_URL", pd.Series("", index=df.index))
+        df["source_category_url"] = df.get(
+            "Vehicle_Category_URL", pd.Series("", index=df.index)
+        )
 
     type_results = [
         classify_vehicle_type_details(fahrzeugtyp, source_category)
-        for fahrzeugtyp, source_category in zip(df["Fahrzeugtyp"], source_categories, strict=False)
+        for fahrzeugtyp, source_category in zip(
+            df["Fahrzeugtyp"], source_categories, strict=False
+        )
     ]
     df["raw_vehicle_type"] = df["Fahrzeugtyp"]
     df["normalized_vehicle_type"] = [result[1] for result in type_results]
@@ -238,7 +331,11 @@ def _source_category_series(df: pd.DataFrame) -> pd.Series:
         base = df["source_category"].copy()
     else:
         base = pd.Series("", index=df.index)
-    for column in ["Vehicle_Category", "source_category_label", "Vehicle_Category_Label"]:
+    for column in [
+        "Vehicle_Category",
+        "source_category_label",
+        "Vehicle_Category_Label",
+    ]:
         if column in df.columns:
             base = base.where(base.astype(str).str.strip() != "", df[column])
     return base

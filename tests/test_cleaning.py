@@ -1,10 +1,16 @@
 """Tests for data cleaning functions."""
+
 import pandas as pd
 import pytest
 from src.processing.cleaning import (
-    _parse_price, _parse_number, _parse_kw, _parse_ps,
-    _parse_percentage, _parse_registration_year, _parse_duration_months,
-    _parse_registration_month, clean_dataframes,
+    _parse_price,
+    _parse_kw,
+    _parse_ps,
+    _parse_percentage,
+    _parse_registration_year,
+    _parse_duration_months,
+    _parse_registration_month,
+    clean_dataframes,
 )
 
 

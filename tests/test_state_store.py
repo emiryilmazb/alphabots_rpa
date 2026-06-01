@@ -43,7 +43,11 @@ def test_vendor_id_determinism_and_export(tmp_path):
 
         await store.save_vendor_done(
             "https://home.mobile.de/ALPHA",
-            {"Händler ID": "C0000001", "Händlername": "Alpha", "Mobile.de_Links": "https://home.mobile.de/ALPHA"},
+            {
+                "Händler ID": "C0000001",
+                "Händlername": "Alpha",
+                "Mobile.de_Links": "https://home.mobile.de/ALPHA",
+            },
         )
         vendors = await store.export_vendors()
         await store.close()
@@ -53,7 +57,11 @@ def test_vendor_id_determinism_and_export(tmp_path):
 
     vendors = asyncio.run(run())
     assert vendors == [
-        {"Händler ID": "C0000001", "Händlername": "Alpha", "Mobile.de_Links": "https://home.mobile.de/ALPHA"}
+        {
+            "Händler ID": "C0000001",
+            "Händlername": "Alpha",
+            "Mobile.de_Links": "https://home.mobile.de/ALPHA",
+        }
     ]
 
 
@@ -96,7 +104,11 @@ def test_requeue_processing_jobs_for_resume(tmp_path):
             vendor_job.normalized_vendor_url,
             vendor_job.haendler_id,
             {"Händler ID": vendor_job.haendler_id},
-            [{"Vehicle_URL": "https://suchen.mobile.de/fahrzeuge/details.html?id=12345678"}],
+            [
+                {
+                    "Vehicle_URL": "https://suchen.mobile.de/fahrzeuge/details.html?id=12345678"
+                }
+            ],
         )
         [vehicle_job] = await store.pending_vehicle_jobs()
         await store.mark_vehicle_processing(vehicle_job.vehicle_url)
@@ -130,7 +142,11 @@ def test_vehicle_done_and_error_export(tmp_path):
         )
         await store.save_vehicle_done(
             "synthetic://vehicle-1",
-            {"run_id": "run-1", "Händler ID": "C0000001", "Vehicle_URL": "synthetic://vehicle-1"},
+            {
+                "run_id": "run-1",
+                "Händler ID": "C0000001",
+                "Vehicle_URL": "synthetic://vehicle-1",
+            },
         )
         await store.record_error(
             {

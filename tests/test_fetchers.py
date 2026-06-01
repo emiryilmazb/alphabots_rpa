@@ -17,7 +17,13 @@ from src.scraper.fetchers import (
 
 
 class FakeResponse:
-    def __init__(self, *, status_code=200, text="<html>" + ("x" * 220) + "</html>", url="https://example.test"):
+    def __init__(
+        self,
+        *,
+        status_code=200,
+        text="<html>" + ("x" * 220) + "</html>",
+        url="https://example.test",
+    ):
         self.status_code = status_code
         self.text = text
         self.url = url
@@ -65,7 +71,9 @@ class FakeBrowserFailure:
 
 
 def test_fetch_result_defaults_are_populated():
-    result = FetchResult(url="https://example.test", html="<html></html>", strategy="curl_cffi")
+    result = FetchResult(
+        url="https://example.test", html="<html></html>", strategy="curl_cffi"
+    )
 
     assert result.final_url == "https://example.test"
     assert result.fetched_at
@@ -74,7 +82,9 @@ def test_fetch_result_defaults_are_populated():
 
 def test_vehicle_id_from_url_extracts_detail_query_id():
     assert (
-        vehicle_id_from_url("https://suchen.mobile.de/fahrzeuge/details.html?id=444369609&lang=de")
+        vehicle_id_from_url(
+            "https://suchen.mobile.de/fahrzeuge/details.html?id=444369609&lang=de"
+        )
         == "444369609"
     )
 
@@ -97,7 +107,9 @@ def test_curl_fetcher_mock_success():
 def test_curl_fetcher_mock_http_error():
     fetcher = CurlFetcher(
         ScraperConfig(fetch_strategy="curl"),
-        session_factory=lambda: FakeSession(FakeResponse(status_code=403, text="blocked")),
+        session_factory=lambda: FakeSession(
+            FakeResponse(status_code=403, text="blocked")
+        ),
     )
 
     result = asyncio.run(fetcher.fetch("https://example.test"))
@@ -135,7 +147,9 @@ def test_strategy_manager_falls_back_when_static_validation_fails():
     result = asyncio.run(
         manager.fetch(
             "https://example.test",
-            validator=lambda _result: StaticValidation(False, "missing_required_fields"),
+            validator=lambda _result: StaticValidation(
+                False, "missing_required_fields"
+            ),
         )
     )
 
@@ -155,7 +169,9 @@ def test_strategy_manager_does_not_fallback_when_static_validation_passes():
             strategy="curl_cffi",
         )
     )
-    playwright = FakeFetcher(FetchResult(url="https://example.test", strategy="playwright_chromium"))
+    playwright = FakeFetcher(
+        FetchResult(url="https://example.test", strategy="playwright_chromium")
+    )
     manager = FetchStrategyManager(
         ScraperConfig(fetch_strategy="auto"),
         curl_fetcher=curl,
@@ -207,8 +223,14 @@ def test_static_validation_rejects_dynamic_or_blocked_html():
 
 
 def test_host_chrome_cdp_classifies_blocked_pages_as_failures():
-    assert HostChromeCdpFetcher._failure_type("error_page") == "host_chrome_cdp_blocked_or_challenge"
-    assert HostChromeCdpFetcher._failure_type("home_redirect") == "host_chrome_cdp_not_detail_page"
+    assert (
+        HostChromeCdpFetcher._failure_type("error_page")
+        == "host_chrome_cdp_blocked_or_challenge"
+    )
+    assert (
+        HostChromeCdpFetcher._failure_type("home_redirect")
+        == "host_chrome_cdp_not_detail_page"
+    )
     assert HostChromeCdpFetcher._failure_type("real_detail_page") == ""
 
 
@@ -218,8 +240,12 @@ def test_host_chrome_cdp_adds_german_language_for_detail_pages():
     assert HostChromeCdpFetcher._with_german_language(url) == (
         "https://suchen.mobile.de/fahrzeuge/details.html?id=123&foo=bar&lang=de"
     )
-    assert HostChromeCdpFetcher._with_german_language(url + "&lang=en").endswith("lang=de")
-    assert HostChromeCdpFetcher._with_german_language("https://example.test/details.html?id=123").endswith("id=123")
+    assert HostChromeCdpFetcher._with_german_language(url + "&lang=en").endswith(
+        "lang=de"
+    )
+    assert HostChromeCdpFetcher._with_german_language(
+        "https://example.test/details.html?id=123"
+    ).endswith("id=123")
 
 
 def test_curl_fetcher_short_circuits_after_module_not_found():

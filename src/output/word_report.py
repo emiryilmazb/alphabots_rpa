@@ -127,7 +127,9 @@ def generate_word_report(
         "The project guarantees schema completeness and processing traceability. Source completeness is measured through coverage metrics."
     )
     doc.add_paragraph("Unavailable source values are not guessed.")
-    doc.add_paragraph("Schema completeness is guaranteed; source completeness is measured.")
+    doc.add_paragraph(
+        "Schema completeness is guaranteed; source completeness is measured."
+    )
     if str(run_summary.get("detail_open_strategy", "")).lower() == "uc-popup":
         doc.add_paragraph(
             "The optional uc-popup detail enrichment opens live listing links in a popup/new tab and can extract "
@@ -178,9 +180,13 @@ def generate_word_report(
             "uc-popup detail enrichment is slower than listing-payload extraction and is recommended for targeted missing-field enrichment with concurrency 1."
         )
     if not df_vendors.empty or not df_cars.empty:
-        limitations.append("The workbook reflects the data successfully collected in this run, not a guaranteed complete live market census.")
+        limitations.append(
+            "The workbook reflects the data successfully collected in this run, not a guaranteed complete live market census."
+        )
     if errors:
-        limitations.append(f"This run recorded {len(errors)} scraping/runtime errors; see errors.csv/json in the output folder.")
+        limitations.append(
+            f"This run recorded {len(errors)} scraping/runtime errors; see errors.csv/json in the output folder."
+        )
     _bullets(doc, limitations)
 
     _section(doc, "13. Assumptions")
@@ -311,7 +317,9 @@ def _add_key_findings(doc: Document, dashboard: dict[str, pd.DataFrame]) -> None
 
     if not vendor_summary.empty:
         top = vendor_summary.iloc[0]
-        low = vendor_summary.sort_values(["Total_Vehicle_Count", "Händlername"], ascending=[True, True]).iloc[0]
+        low = vendor_summary.sort_values(
+            ["Total_Vehicle_Count", "Händlername"], ascending=[True, True]
+        ).iloc[0]
         doc.add_paragraph(
             f"Top vendor by total vehicle count: {top.get('Händlername', '')} "
             f"({int(top.get('Total_Vehicle_Count', 0))} vehicles)."
@@ -372,11 +380,19 @@ def _add_coverage_summary(
         doc.add_paragraph("No coverage metrics were available for this run.")
 
 
-def _add_low_coverage_fields(doc: Document, vehicle_coverage: pd.DataFrame | None) -> None:
-    if vehicle_coverage is None or vehicle_coverage.empty or "field" not in vehicle_coverage.columns:
+def _add_low_coverage_fields(
+    doc: Document, vehicle_coverage: pd.DataFrame | None
+) -> None:
+    if (
+        vehicle_coverage is None
+        or vehicle_coverage.empty
+        or "field" not in vehicle_coverage.columns
+    ):
         return
     coverage = vehicle_coverage.copy()
-    coverage["coverage_pct"] = pd.to_numeric(coverage.get("coverage_pct"), errors="coerce").fillna(0.0)
+    coverage["coverage_pct"] = pd.to_numeric(
+        coverage.get("coverage_pct"), errors="coerce"
+    ).fillna(0.0)
     low_source_rows = coverage[
         coverage["field"].astype(str).isin(LOW_SOURCE_COVERAGE_FIELDS)
         & (coverage["coverage_pct"] < 25)
@@ -405,11 +421,17 @@ def _add_source_audit_summary(doc: Document, run_summary: dict | None) -> None:
     if run_summary.get("source_audit_dir"):
         doc.add_paragraph(f"source_audit_dir: {run_summary['source_audit_dir']}")
     if run_summary.get("detail_strategies_tested"):
-        doc.add_paragraph(f"detail_strategies_tested: {run_summary['detail_strategies_tested']}")
+        doc.add_paragraph(
+            f"detail_strategies_tested: {run_summary['detail_strategies_tested']}"
+        )
     if run_summary.get("detail_strategy_matrix_path"):
-        doc.add_paragraph(f"detail_strategy_matrix_path: {run_summary['detail_strategy_matrix_path']}")
+        doc.add_paragraph(
+            f"detail_strategy_matrix_path: {run_summary['detail_strategy_matrix_path']}"
+        )
     if run_summary.get("detail_strategy_recommendation"):
-        doc.add_paragraph(f"detail_strategy_recommendation: {run_summary['detail_strategy_recommendation']}")
+        doc.add_paragraph(
+            f"detail_strategy_recommendation: {run_summary['detail_strategy_recommendation']}"
+        )
     doc.add_paragraph(
         "Remaining low-coverage detail-dependent fields are CO2-Emissionen, Baureihe, Ausstattungslinie, "
         "and Anzahl der Fahrzeughalter unless a tested detail strategy extracts real values from returned source."

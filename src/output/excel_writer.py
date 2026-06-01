@@ -68,7 +68,10 @@ def generate_excel(
             ),
             ("Errors", _errors_df(errors)),
             ("Vendor_Summary", dashboard.get("vendor_summary", pd.DataFrame())),
-            ("Manufacturer_Summary", dashboard.get("manufacturer_summary", pd.DataFrame())),
+            (
+                "Manufacturer_Summary",
+                dashboard.get("manufacturer_summary", pd.DataFrame()),
+            ),
             ("Category_Summary", dashboard.get("category_summary", pd.DataFrame())),
             ("Best_Deals", dashboard.get("best_deals", pd.DataFrame())),
             ("Worst_Deals", dashboard.get("worst_deals", pd.DataFrame())),
@@ -85,7 +88,12 @@ def generate_excel(
             "Category_By_Manufacturer",
             formats,
         )
-        _write_sheet(writer, dashboard.get("origin_summary", pd.DataFrame()), "Origin_Summary", formats)
+        _write_sheet(
+            writer,
+            dashboard.get("origin_summary", pd.DataFrame()),
+            "Origin_Summary",
+            formats,
+        )
         _write_dashboard_sheet(writer, wb, dashboard, formats)
 
     logger.info("Excel workbook saved: %s", path)
@@ -117,7 +125,9 @@ def _ensure_columns(df: pd.DataFrame | None, columns: list[str]) -> pd.DataFrame
 def _validate_or_raise(df: pd.DataFrame, columns: list[str], dataset: str) -> None:
     missing = validate_required_columns(df, columns)
     if missing:
-        raise ValueError(f"{dataset} output is missing required columns: {', '.join(missing)}")
+        raise ValueError(
+            f"{dataset} output is missing required columns: {', '.join(missing)}"
+        )
 
 
 def _run_summary_df(run_summary: dict | pd.DataFrame | None) -> pd.DataFrame:
@@ -135,14 +145,25 @@ def _coverage_df(
     vehicle_coverage: pd.DataFrame | None,
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
-    for dataset, coverage in [("vendors", vendor_coverage), ("vehicles", vehicle_coverage)]:
+    for dataset, coverage in [
+        ("vendors", vendor_coverage),
+        ("vehicles", vehicle_coverage),
+    ]:
         if coverage is None:
             continue
         work = coverage.copy()
         work.insert(0, "dataset", dataset)
         frames.append(work)
     if not frames:
-        return pd.DataFrame(columns=["dataset", "field", "non_empty_count", "total_count", "coverage_pct"])
+        return pd.DataFrame(
+            columns=[
+                "dataset",
+                "field",
+                "non_empty_count",
+                "total_count",
+                "coverage_pct",
+            ]
+        )
     return pd.concat(frames, ignore_index=True)
 
 
@@ -156,14 +177,27 @@ def _requirements_compliance_df(
 ) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     specs: list[tuple[str, str, pd.DataFrame, pd.DataFrame | None]] = []
-    specs.extend(("vendors", field, df_vendors, vendor_coverage) for field in VENDOR_COLUMNS)
-    specs.extend(("vehicles", field, df_cars_processed, vehicle_coverage) for field in VEHICLE_REQUIRED_FIELDS)
-    specs.extend(("financing", field, df_cars_processed, vehicle_coverage) for field in FINANCING_REQUIRED_FIELDS)
-    specs.extend(("classification", field, df_cars_processed, vehicle_coverage) for field in CLASSIFICATION_REQUIRED_FIELDS)
+    specs.extend(
+        ("vendors", field, df_vendors, vendor_coverage) for field in VENDOR_COLUMNS
+    )
+    specs.extend(
+        ("vehicles", field, df_cars_processed, vehicle_coverage)
+        for field in VEHICLE_REQUIRED_FIELDS
+    )
+    specs.extend(
+        ("financing", field, df_cars_processed, vehicle_coverage)
+        for field in FINANCING_REQUIRED_FIELDS
+    )
+    specs.extend(
+        ("classification", field, df_cars_processed, vehicle_coverage)
+        for field in CLASSIFICATION_REQUIRED_FIELDS
+    )
 
     seen: set[tuple[str, str]] = set()
     summary = _summary_mapping(run_summary)
-    source_audit_completed = str(summary.get("source_audit_completed", "")).lower() == "true"
+    source_audit_completed = (
+        str(summary.get("source_audit_completed", "")).lower() == "true"
+    )
     detail_strategy_status = str(summary.get("detail_strategy_status", ""))
     for dataset, field, df, coverage_df in specs:
         key = (dataset, field)
@@ -218,8 +252,14 @@ def _requirements_compliance_df(
     )
 
 
-def _coverage_for_field(coverage_df: pd.DataFrame | None, field: str, total: int) -> dict[str, float | int]:
-    if coverage_df is not None and not coverage_df.empty and "field" in coverage_df.columns:
+def _coverage_for_field(
+    coverage_df: pd.DataFrame | None, field: str, total: int
+) -> dict[str, float | int]:
+    if (
+        coverage_df is not None
+        and not coverage_df.empty
+        and "field" in coverage_df.columns
+    ):
         matches = coverage_df[coverage_df["field"].astype(str) == field]
         if not matches.empty:
             row = matches.iloc[0]
@@ -255,7 +295,9 @@ def _has_value(value: object) -> bool:
     return str(value).strip() not in {"", "None", "nan", "NaN", "<NA>"}
 
 
-def _compliance_status(column_exists: bool, extractor_exists: bool, coverage_pct: float) -> str:
+def _compliance_status(
+    column_exists: bool, extractor_exists: bool, coverage_pct: float
+) -> str:
     if not column_exists or not extractor_exists:
         return "missing"
     if coverage_pct == 0:
@@ -315,7 +357,9 @@ def _compliance_notes(
             )
         return "Extractor exists, but current source coverage is low; values are not guessed when mobile.de does not expose them."
     if dataset == "financing":
-        return "Populated only when mobile.de exposes a financing offer for the listing."
+        return (
+            "Populated only when mobile.de exposes a financing offer for the listing."
+        )
     if dataset == "classification":
         return "Derived from scraped vehicle type/manufacturer according to task rules."
     if status == "partially_satisfied":
@@ -365,10 +409,16 @@ def _requirement_row(
     }
 
 
-def _dashboard_compliance_rows(dashboard: dict[str, pd.DataFrame]) -> list[dict[str, object]]:
+def _dashboard_compliance_rows(
+    dashboard: dict[str, pd.DataFrame],
+) -> list[dict[str, object]]:
     requirements = [
         ("Top and Least vendors", ["vendor_summary"], "Vendor_Summary/Dashboard"),
-        ("Best and worst deals", ["best_deals", "worst_deals"], "Best_Deals/Worst_Deals"),
+        (
+            "Best and worst deals",
+            ["best_deals", "worst_deals"],
+            "Best_Deals/Worst_Deals",
+        ),
         ("Efficient Vehicles", ["efficient_vehicles"], "Efficient_Vehicles"),
         (
             "Highest and lowest manufacturers and top-selling categories",
@@ -383,7 +433,9 @@ def _dashboard_compliance_rows(dashboard: dict[str, pd.DataFrame]) -> list[dict[
         available = True
         if keys:
             available = all(
-                key in dashboard and isinstance(dashboard[key], pd.DataFrame) and not dashboard[key].empty
+                key in dashboard
+                and isinstance(dashboard[key], pd.DataFrame)
+                and not dashboard[key].empty
                 for key in keys
             )
         rows.append(
@@ -393,7 +445,9 @@ def _dashboard_compliance_rows(dashboard: dict[str, pd.DataFrame]) -> list[dict[
                 source=source,
                 coverage_pct=100.0 if available else 0.0,
                 status="satisfied" if available else "schema_only",
-                notes="Dashboard requirement is generated in the workbook/report." if available else "Dashboard input was empty in this run.",
+                notes="Dashboard requirement is generated in the workbook/report."
+                if available
+                else "Dashboard input was empty in this run.",
                 missing_count=0 if available else 1,
                 risk_level="low" if available else "medium",
             )
@@ -402,7 +456,9 @@ def _dashboard_compliance_rows(dashboard: dict[str, pd.DataFrame]) -> list[dict[
 
 
 def _audit_compliance_rows(summary: dict[str, object]) -> list[dict[str, object]]:
-    source_audit_completed = str(summary.get("source_audit_completed", "")).lower() == "true"
+    source_audit_completed = (
+        str(summary.get("source_audit_completed", "")).lower() == "true"
+    )
     detail_status = str(summary.get("detail_strategy_status", ""))
     detail_completed = bool(detail_status) and not detail_status.startswith("failed")
     return [
@@ -415,7 +471,9 @@ def _audit_compliance_rows(summary: dict[str, object]) -> list[dict[str, object]
             sample=str(summary.get("source_audit_dir", "")),
             missing_count=0 if source_audit_completed else 1,
             risk_level="low" if source_audit_completed else "medium",
-            notes="Bounded source audit evidence saved." if source_audit_completed else "Source audit was not run for this workbook.",
+            notes="Bounded source audit evidence saved."
+            if source_audit_completed
+            else "Source audit was not run for this workbook.",
         ),
         _requirement_row(
             field_name="detail_strategy_matrix_completed",
@@ -465,7 +523,9 @@ def _errors_df(errors: list[dict] | pd.DataFrame | None) -> pd.DataFrame:
     for column in ["type", "url", "error"]:
         if column not in df.columns:
             df[column] = ""
-    remaining = [column for column in df.columns if column not in {"type", "url", "error"}]
+    remaining = [
+        column for column in df.columns if column not in {"type", "url", "error"}
+    ]
     return df[["type", "url", "error", *remaining]]
 
 
@@ -481,8 +541,12 @@ def _formats(wb) -> dict:
                 "valign": "vcenter",
             }
         ),
-        "title": wb.add_format({"bold": True, "font_size": 16, "font_color": "#1F4E79"}),
-        "subtitle": wb.add_format({"bold": True, "font_size": 12, "font_color": "#2E75B6"}),
+        "title": wb.add_format(
+            {"bold": True, "font_size": 16, "font_color": "#1F4E79"}
+        ),
+        "subtitle": wb.add_format(
+            {"bold": True, "font_size": 12, "font_color": "#2E75B6"}
+        ),
         "eur": wb.add_format({"num_format": '#,##0 "€"'}),
         "km": wb.add_format({"num_format": '#,##0 "km"'}),
         "pct": wb.add_format({"num_format": "0.00%"}),
@@ -505,7 +569,9 @@ def _write_sheet(writer, df: pd.DataFrame, name: str, formats: dict) -> None:
         width = len(str(col_name)) + 3
         if len(df) > 0:
             width = max(width, _safe_column_width(df[col_name], fallback=width))
-        ws.set_column(col_idx, col_idx, min(max(width, 10), 45), _column_format(col_name, formats))
+        ws.set_column(
+            col_idx, col_idx, min(max(width, 10), 45), _column_format(col_name, formats)
+        )
 
     ws.freeze_panes(1, 0)
     if len(df.columns) > 0:
@@ -527,20 +593,34 @@ def _safe_column_width(series: pd.Series, fallback: int) -> int:
 
 def _column_format(col_name: str, formats: dict):
     lower = col_name.lower()
-    if "eur" in lower or "preis" in lower or "anzahlung" in lower or "schlussrate" in lower or "gesamtbetrag" in lower:
+    if (
+        "eur" in lower
+        or "preis" in lower
+        or "anzahlung" in lower
+        or "schlussrate" in lower
+        or "gesamtbetrag" in lower
+    ):
         return formats["eur"]
     if "km" in lower or "kilometer" in lower:
         return formats["km"]
     if "pct" in lower or "zins" in lower or "share" in lower:
         return formats["pct"] if lower == "share" else formats["float"]
-    if "count" in lower or "jahr" in lower or "monate" in lower or "kw" in lower or "ps" in lower:
+    if (
+        "count" in lower
+        or "jahr" in lower
+        or "monate" in lower
+        or "kw" in lower
+        or "ps" in lower
+    ):
         return formats["num"]
     if "score" in lower or "co2" in lower:
         return formats["float"]
     return None
 
 
-def _write_dashboard_sheet(writer, wb, dashboard: dict[str, pd.DataFrame], formats: dict) -> None:
+def _write_dashboard_sheet(
+    writer, wb, dashboard: dict[str, pd.DataFrame], formats: dict
+) -> None:
     """Create an overview sheet with summary tables and charts."""
     ws = wb.add_worksheet("Dashboard")
     writer.sheets["Dashboard"] = ws
@@ -549,13 +629,49 @@ def _write_dashboard_sheet(writer, wb, dashboard: dict[str, pd.DataFrame], forma
     ws.set_column(1, 1, 16)
     ws.set_column(2, 2, 18)
     ws.write(0, 0, "Mobile.de Nordrhein-Westfalen Dashboard", formats["title"])
-    ws.write(1, 0, "Best/worst deal metrics use normalized price, mileage, first registration year, price/kW, and CO2 where available.")
+    ws.write(
+        1,
+        0,
+        "Best/worst deal metrics use normalized price, mileage, first registration year, price/kW, and CO2 where available.",
+    )
 
     row = 3
-    row = _write_dashboard_table(ws, "Top Vendors", dashboard.get("vendor_summary"), row, formats, cols=["Händlername", "Total_Vehicle_Count"], head=10)
-    row = _write_dashboard_table(ws, "Least Vendors", _tail_sorted(dashboard.get("vendor_summary")), row, formats, cols=["Händlername", "Total_Vehicle_Count"], head=10)
-    row = _write_dashboard_table(ws, "Top Manufacturers", dashboard.get("manufacturer_summary"), row, formats, cols=["Manufacturer", "Count"], head=15)
-    row = _write_dashboard_table(ws, "Vehicle Categories", dashboard.get("category_summary"), row, formats, cols=["Category", "Count"], head=10)
+    row = _write_dashboard_table(
+        ws,
+        "Top Vendors",
+        dashboard.get("vendor_summary"),
+        row,
+        formats,
+        cols=["Händlername", "Total_Vehicle_Count"],
+        head=10,
+    )
+    row = _write_dashboard_table(
+        ws,
+        "Least Vendors",
+        _tail_sorted(dashboard.get("vendor_summary")),
+        row,
+        formats,
+        cols=["Händlername", "Total_Vehicle_Count"],
+        head=10,
+    )
+    row = _write_dashboard_table(
+        ws,
+        "Top Manufacturers",
+        dashboard.get("manufacturer_summary"),
+        row,
+        formats,
+        cols=["Manufacturer", "Count"],
+        head=15,
+    )
+    row = _write_dashboard_table(
+        ws,
+        "Vehicle Categories",
+        dashboard.get("category_summary"),
+        row,
+        formats,
+        cols=["Category", "Count"],
+        head=10,
+    )
     row = _write_dashboard_table(
         ws,
         "Most Listed Categories by Manufacturer",
@@ -566,15 +682,47 @@ def _write_dashboard_sheet(writer, wb, dashboard: dict[str, pd.DataFrame], forma
         head=20,
     )
 
-    _insert_bar_chart(wb, ws, "Top Manufacturers by Listing Count", "Dashboard", 25, 4, dashboard.get("manufacturer_summary"), "Manufacturer", "Count")
-    _insert_pie_chart(wb, ws, "Vehicle Category Distribution", "Dashboard", 48, 4, dashboard.get("category_summary"), "Category", "Count")
-    _insert_bar_chart(wb, ws, "Top Vendors by Total Vehicle Count", "Dashboard", 71, 4, dashboard.get("vendor_summary"), "Händlername", "Total_Vehicle_Count")
+    _insert_bar_chart(
+        wb,
+        ws,
+        "Top Manufacturers by Listing Count",
+        "Dashboard",
+        25,
+        4,
+        dashboard.get("manufacturer_summary"),
+        "Manufacturer",
+        "Count",
+    )
+    _insert_pie_chart(
+        wb,
+        ws,
+        "Vehicle Category Distribution",
+        "Dashboard",
+        48,
+        4,
+        dashboard.get("category_summary"),
+        "Category",
+        "Count",
+    )
+    _insert_bar_chart(
+        wb,
+        ws,
+        "Top Vendors by Total Vehicle Count",
+        "Dashboard",
+        71,
+        4,
+        dashboard.get("vendor_summary"),
+        "Händlername",
+        "Total_Vehicle_Count",
+    )
 
 
 def _tail_sorted(df: pd.DataFrame | None) -> pd.DataFrame:
     if df is None or df.empty or "Total_Vehicle_Count" not in df.columns:
         return pd.DataFrame()
-    return df.sort_values(["Total_Vehicle_Count", "Händlername"], ascending=[True, True])
+    return df.sort_values(
+        ["Total_Vehicle_Count", "Händlername"], ascending=[True, True]
+    )
 
 
 def _write_dashboard_table(
@@ -596,13 +744,25 @@ def _write_dashboard_table(
     available = [col for col in cols if col in df.columns]
     for col_idx, col in enumerate(available):
         ws.write(start_row, col_idx, col, formats["header"])
-    for row_offset, (_, record) in enumerate(df[available].head(head).iterrows(), start=1):
+    for row_offset, (_, record) in enumerate(
+        df[available].head(head).iterrows(), start=1
+    ):
         for col_idx, col in enumerate(available):
             _write_cell(ws, start_row + row_offset, col_idx, record[col])
     return start_row + min(len(df), head) + 3
 
 
-def _insert_bar_chart(wb, ws, title: str, sheet_name: str, row: int, col: int, df: pd.DataFrame | None, cat_col: str, val_col: str) -> None:
+def _insert_bar_chart(
+    wb,
+    ws,
+    title: str,
+    sheet_name: str,
+    row: int,
+    col: int,
+    df: pd.DataFrame | None,
+    cat_col: str,
+    val_col: str,
+) -> None:
     if df is None or df.empty or cat_col not in df.columns or val_col not in df.columns:
         return
     data = df[[cat_col, val_col]].head(15).reset_index(drop=True)
@@ -615,7 +775,13 @@ def _insert_bar_chart(wb, ws, title: str, sheet_name: str, row: int, col: int, d
         {
             "name": val_col,
             "categories": [sheet_name, table_row, col, table_row + len(data) - 1, col],
-            "values": [sheet_name, table_row, col + 1, table_row + len(data) - 1, col + 1],
+            "values": [
+                sheet_name,
+                table_row,
+                col + 1,
+                table_row + len(data) - 1,
+                col + 1,
+            ],
             "fill": {"color": "#2E75B6"},
         }
     )
@@ -625,7 +791,17 @@ def _insert_bar_chart(wb, ws, title: str, sheet_name: str, row: int, col: int, d
     ws.insert_chart(row, col + 3, chart)
 
 
-def _insert_pie_chart(wb, ws, title: str, sheet_name: str, row: int, col: int, df: pd.DataFrame | None, cat_col: str, val_col: str) -> None:
+def _insert_pie_chart(
+    wb,
+    ws,
+    title: str,
+    sheet_name: str,
+    row: int,
+    col: int,
+    df: pd.DataFrame | None,
+    cat_col: str,
+    val_col: str,
+) -> None:
     if df is None or df.empty or cat_col not in df.columns or val_col not in df.columns:
         return
     data = df[[cat_col, val_col]].head(8).reset_index(drop=True)
@@ -638,7 +814,13 @@ def _insert_pie_chart(wb, ws, title: str, sheet_name: str, row: int, col: int, d
         {
             "name": val_col,
             "categories": [sheet_name, table_row, col, table_row + len(data) - 1, col],
-            "values": [sheet_name, table_row, col + 1, table_row + len(data) - 1, col + 1],
+            "values": [
+                sheet_name,
+                table_row,
+                col + 1,
+                table_row + len(data) - 1,
+                col + 1,
+            ],
         }
     )
     chart.set_title({"name": title})

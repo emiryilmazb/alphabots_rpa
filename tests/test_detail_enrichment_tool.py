@@ -79,7 +79,9 @@ def test_enricher_parses_manual_html_sample(tmp_path):
     cache_dir = tmp_path / "cache"
     manual_dir = tmp_path / "manual"
     manual_dir.mkdir()
-    fixture = Path("tests/fixtures/html/vehicle_detail_complete.html").read_text(encoding="utf-8")
+    fixture = Path("tests/fixtures/html/vehicle_detail_complete.html").read_text(
+        encoding="utf-8"
+    )
     (manual_dir / "123.html").write_text(fixture, encoding="utf-8")
     records = [
         {

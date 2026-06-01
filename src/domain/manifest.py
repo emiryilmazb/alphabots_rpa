@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+
 def build_run_manifest(
     run_id: str,
     git_commit: str,
@@ -11,7 +12,7 @@ def build_run_manifest(
     shard_count: int,
     max_vendors: Optional[int],
     max_cars_per_vendor: Optional[int],
-    config_summary: Dict[str, Any]
+    config_summary: Dict[str, Any],
 ) -> Dict[str, Any]:
     return {
         "run_id": run_id,
@@ -24,5 +25,5 @@ def build_run_manifest(
         "max_vendors": max_vendors,
         "max_cars_per_vendor": max_cars_per_vendor,
         "started_at": datetime.utcnow().isoformat(),
-        "config_summary": config_summary
+        "config_summary": config_summary,
     }

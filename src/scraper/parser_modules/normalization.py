@@ -1,7 +1,8 @@
-SEARCH_BASE = 'https://suchen.mobile.de'
+SEARCH_BASE = "https://suchen.mobile.de"
 import re
-from typing import Optional, Dict, Any
+from typing import Any
 from urllib.parse import urlparse, urlunparse
+
 
 def clean_text(value: Any) -> str:
     """Normalize whitespace while preserving German characters."""
@@ -9,6 +10,7 @@ def clean_text(value: Any) -> str:
         return ""
     text = str(value).replace("\xa0", " ")
     return re.sub(r"\s+", " ", text).strip()
+
 
 def normalize_dealer_url(url: str) -> str:
     """Normalize a mobile.de dealer URL to a stable, query-free homepage URL."""
@@ -29,6 +31,7 @@ def normalize_dealer_url(url: str) -> str:
     path = f"/{parts[0].upper()}" if len(parts) == 1 else parsed.path.rstrip("/")
     return urlunparse(("https", "home.mobile.de", path, "", "", ""))
 
+
 def normalize_vehicle_url(url: str) -> str:
     """Normalize a vehicle URL or listing id to an absolute detail URL."""
     url = clean_text(url)
@@ -44,8 +47,8 @@ def normalize_vehicle_url(url: str) -> str:
         return f"https://{url}"
     return url
 
+
 def dealer_identifier(url: str) -> str:
     """Return the stable slug/customer id part from a dealer URL."""
     parsed = urlparse(normalize_dealer_url(url))
     return parsed.path.strip("/").split("/")[0]
-

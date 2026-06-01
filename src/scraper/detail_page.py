@@ -8,7 +8,12 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
-from src.scraper.parsers import clean_text, parse_vehicle_price, parse_vehicle_specs, parse_vehicle_title
+from src.scraper.parsers import (
+    clean_text,
+    parse_vehicle_price,
+    parse_vehicle_specs,
+    parse_vehicle_title,
+)
 
 DetailPageClassification = Literal[
     "real_detail_page",
@@ -71,17 +76,34 @@ def classify_detail_page(html: str, url: str = "", title: str = "") -> DetailPag
 
     if not clean_text(html) and not title and not url:
         return DetailPageResult("blank_page", "empty_capture")
-    if lowered_url in {"about:blank", "data:,"} or (len(html.strip()) < 80 and not title):
+    if lowered_url in {"about:blank", "data:,"} or (
+        len(html.strip()) < 80 and not title
+    ):
         return DetailPageResult("blank_page", "blank_or_too_short")
 
-    error_marker = next((marker for marker in ERROR_MARKERS if marker in lowered_html or marker in lowered_title or marker in lowered_url), "")
+    error_marker = next(
+        (
+            marker
+            for marker in ERROR_MARKERS
+            if marker in lowered_html
+            or marker in lowered_title
+            or marker in lowered_url
+        ),
+        "",
+    )
     if error_marker:
-        return DetailPageResult("error_page", error_marker, {"error_marker": error_marker})
+        return DetailPageResult(
+            "error_page", error_marker, {"error_marker": error_marker}
+        )
 
     parsed = urlparse(url)
     is_detail_url = any(marker in lowered_url for marker in DETAIL_PATH_MARKERS)
-    is_search_listing = "search.html" in lowered_url or "/fahrzeuge/search" in lowered_url
-    is_home_root = parsed.netloc == "home.mobile.de" and parsed.path.strip("/").count("/") <= 0
+    is_search_listing = (
+        "search.html" in lowered_url or "/fahrzeuge/search" in lowered_url
+    )
+    is_home_root = (
+        parsed.netloc == "home.mobile.de" and parsed.path.strip("/").count("/") <= 0
+    )
     title_looks_home = all(marker in lowered_title for marker in HOME_TITLE_MARKERS)
 
     soup = BeautifulSoup(html, "lxml")
@@ -101,7 +123,11 @@ def classify_detail_page(html: str, url: str = "", title: str = "") -> DetailPag
     if is_search_listing and not is_detail_url:
         return DetailPageResult("listing_page", "search_listing_url")
 
-    if is_detail_url and has_vehicle_identity and (has_vehicle_data or has_detail_marker):
+    if (
+        is_detail_url
+        and has_vehicle_identity
+        and (has_vehicle_data or has_detail_marker)
+    ):
         return DetailPageResult(
             "real_detail_page",
             "detail_url_with_vehicle_signals",

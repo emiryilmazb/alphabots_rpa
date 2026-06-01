@@ -54,7 +54,10 @@ class CurlFetcher:
                 # Mark as available on first success
                 if CurlFetcher._curl_cffi_available is None:
                     CurlFetcher._curl_cffi_available = True
-                    logger.info("curl_cffi is available (v%s); using for static fetches.", self._get_version())
+                    logger.info(
+                        "curl_cffi is available (v%s); using for static fetches.",
+                        self._get_version(),
+                    )
 
                 elapsed = (perf_counter() - started) * 1000
                 html = getattr(response, "text", "") or ""
@@ -113,6 +116,7 @@ class CurlFetcher:
     def _get_version() -> str:
         try:
             import curl_cffi
+
             return getattr(curl_cffi, "__version__", "unknown")
         except Exception:
             return "unknown"
@@ -122,10 +126,12 @@ class CurlFetcher:
         try:
             from curl_cffi.requests import AsyncSession
         except ImportError:
-            if not globals().get('_CURL_WARNING_SHOWN'):
-                logger.warning('curl_cffi unavailable; static fast fetch disabled; Playwright-only mode will be slower.')
-                globals()['_CURL_WARNING_SHOWN'] = True
-            raise ImportError('No module named \'curl_cffi\'')
+            if not globals().get("_CURL_WARNING_SHOWN"):
+                logger.warning(
+                    "curl_cffi unavailable; static fast fetch disabled; Playwright-only mode will be slower."
+                )
+                globals()["_CURL_WARNING_SHOWN"] = True
+            raise ImportError("No module named 'curl_cffi'")
 
         return AsyncSession(
             impersonate="chrome120",

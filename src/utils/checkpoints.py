@@ -30,8 +30,11 @@ class CheckpointManager:
         path = self._path(name)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        logger.debug("Checkpoint saved: %s (%d items)", name,
-                      len(data) if isinstance(data, (list, dict)) else 1)
+        logger.debug(
+            "Checkpoint saved: %s (%d items)",
+            name,
+            len(data) if isinstance(data, (list, dict)) else 1,
+        )
 
     def load(self, name: str) -> Any | None:
         """Load checkpoint data. Returns None if not found."""
@@ -40,8 +43,11 @@ class CheckpointManager:
             return None
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        logger.info("Checkpoint loaded: %s (%d items)", name,
-                     len(data) if isinstance(data, (list, dict)) else 1)
+        logger.info(
+            "Checkpoint loaded: %s (%d items)",
+            name,
+            len(data) if isinstance(data, (list, dict)) else 1,
+        )
         return data
 
     def exists(self, name: str) -> bool:

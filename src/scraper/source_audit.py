@@ -13,7 +13,14 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from playwright.async_api import Browser, BrowserContext, Page, Playwright, Response, async_playwright
+from playwright.async_api import (
+    Browser,
+    BrowserContext,
+    Page,
+    Playwright,
+    Response,
+    async_playwright,
+)
 
 from src.config import ScraperConfig
 from src.scraper.browser import DEFAULT_USER_AGENT
@@ -153,11 +160,16 @@ class NetworkRecorder:
             "content_type": content_type,
             "headers": _small_headers(headers),
         }
-        if _should_capture_response_body(response.url, content_type, request.resource_type):
+        if _should_capture_response_body(
+            response.url, content_type, request.resource_type
+        ):
             try:
                 text = await asyncio.wait_for(response.text(), timeout=5)
                 if text and len(text) <= 2_000_000:
-                    body_path = self.response_body_dir / f"{_digest(response.url)}{_body_suffix(content_type)}"
+                    body_path = (
+                        self.response_body_dir
+                        / f"{_digest(response.url)}{_body_suffix(content_type)}"
+                    )
                     body_path.write_text(text, encoding="utf-8", errors="ignore")
                     entry["body_path"] = str(body_path)
                     entry["body_excerpt"] = clean_text(text[:500])
@@ -171,7 +183,9 @@ class NetworkRecorder:
     async def flush(self) -> dict[str, Any]:
         if self._tasks:
             try:
-                await asyncio.wait_for(asyncio.gather(*self._tasks, return_exceptions=True), timeout=20)
+                await asyncio.wait_for(
+                    asyncio.gather(*self._tasks, return_exceptions=True), timeout=20
+                )
             except asyncio.TimeoutError:
                 for task in self._tasks:
                     if not task.done():
@@ -219,7 +233,9 @@ async def run_source_audit(
                 (config.source_audit_max_vehicles + config.source_audit_max_vendors - 1)
                 // config.source_audit_max_vendors,
             )
-            for index, vendor_url in enumerate(vendor_urls[: config.source_audit_max_vendors], start=1):
+            for index, vendor_url in enumerate(
+                vendor_urls[: config.source_audit_max_vendors], start=1
+            ):
                 vendor_result, vendor_samples = await _audit_vendor(
                     page,
                     audit_dir / f"vendor_{index}_{_safe_name(vendor_url)}",
@@ -241,9 +257,18 @@ async def run_source_audit(
         finally:
             await _close_context_and_browser(context, browser)
 
-    _write_json(audit_dir / "network_response_index.json", network_payload["network_response_index"])
-    _write_json(audit_dir / "playwright_request_response_log.json", network_payload["playwright_request_response_log"])
-    _write_json(audit_dir / "discovered_api_endpoints.json", network_payload["discovered_api_endpoints"])
+    _write_json(
+        audit_dir / "network_response_index.json",
+        network_payload["network_response_index"],
+    )
+    _write_json(
+        audit_dir / "playwright_request_response_log.json",
+        network_payload["playwright_request_response_log"],
+    )
+    _write_json(
+        audit_dir / "discovered_api_endpoints.json",
+        network_payload["discovered_api_endpoints"],
+    )
 
     matrix = await run_detail_strategy_matrix(config, samples, audit_dir)
     _write_json(audit_dir / "detail_strategy_matrix.json", matrix)
@@ -280,10 +305,16 @@ async def run_source_audit(
 async def _discover_vendor_urls(page: Page, config: ScraperConfig) -> list[str]:
     discovered: list[str] = []
     try:
-        await page.goto(config.state_page_url.format(page=0), wait_until="domcontentloaded", timeout=45_000)
+        await page.goto(
+            config.state_page_url.format(page=0),
+            wait_until="domcontentloaded",
+            timeout=45_000,
+        )
         await _accept_cookies(page)
         html = await page.content()
-        discovered = [dealer["url"] for dealer in parse_regional_page(html) if dealer.get("url")]
+        discovered = [
+            dealer["url"] for dealer in parse_regional_page(html) if dealer.get("url")
+        ]
     except Exception as exc:
         logger.warning("Source audit regional discovery failed: %s", exc)
 
@@ -310,25 +341,36 @@ async def _audit_vendor(
     }
     samples: list[VehicleSample] = []
 
-    response = await page.goto(vendor_url, wait_until="domcontentloaded", timeout=45_000)
+    response = await page.goto(
+        vendor_url, wait_until="domcontentloaded", timeout=45_000
+    )
     await _accept_cookies(page)
     await _settle_page(page)
     vendor_html = await page.content()
     _write_text(vendor_dir / "vendor_base.html", vendor_html)
-    _write_json(vendor_dir / "vendor_base_next_data.json", extract_next_payloads(vendor_html))
+    _write_json(
+        vendor_dir / "vendor_base_next_data.json", extract_next_payloads(vendor_html)
+    )
 
     category_url = _choose_category_url(vendor_url, vendor_html)
     result["category_url"] = category_url
-    response = await page.goto(category_url, wait_until="domcontentloaded", timeout=45_000)
+    response = await page.goto(
+        category_url, wait_until="domcontentloaded", timeout=45_000
+    )
     await _accept_cookies(page)
     await _settle_page(page)
     category_html = await page.content()
     _write_text(vendor_dir / "category_page.html", category_html)
-    _write_json(vendor_dir / "category_page_next_data.json", extract_next_payloads(category_html))
+    _write_json(
+        vendor_dir / "category_page_next_data.json",
+        extract_next_payloads(category_html),
+    )
 
     raw_listings = _raw_search_result_listings(category_html)
     summaries = parse_vehicle_listing_summaries(category_html)
-    page_urls = [normalize_vehicle_url(url) for url in parse_vehicle_listing_urls(category_html)]
+    page_urls = [
+        normalize_vehicle_url(url) for url in parse_vehicle_listing_urls(category_html)
+    ]
     dom_cards = await _dom_listing_cards(page)
     card_text = "\n\n---CARD---\n\n".join(card.get("text", "") for card in dom_cards)
 
@@ -341,26 +383,49 @@ async def _audit_vendor(
             "page_urls": page_urls,
         },
     )
-    _write_json(vendor_dir / "vehicle_card_raw.json", raw_listings[0] if raw_listings else {})
+    _write_json(
+        vendor_dir / "vehicle_card_raw.json", raw_listings[0] if raw_listings else {}
+    )
     _write_text(vendor_dir / "vehicle_card_text.txt", card_text)
-    _write_json(vendor_dir / "listing_payload_key_hits.json", _recursive_keyword_hits(raw_listings))
+    _write_json(
+        vendor_dir / "listing_payload_key_hits.json",
+        _recursive_keyword_hits(raw_listings),
+    )
 
     detail_urls = []
-    for url in [*summaries.keys(), *page_urls, *(card.get("url", "") for card in dom_cards)]:
+    for url in [
+        *summaries.keys(),
+        *page_urls,
+        *(card.get("url", "") for card in dom_cards),
+    ]:
         normalized = normalize_vehicle_url(url)
-        if normalized and "details.html" in normalized and normalized not in detail_urls:
+        if (
+            normalized
+            and "details.html" in normalized
+            and normalized not in detail_urls
+        ):
             detail_urls.append(normalized)
 
     result["listing_count"] = max(len(summaries), len(raw_listings), len(dom_cards))
     result["real_detail_url_count"] = len(detail_urls)
-    result["target_key_hits_in_listing_payload"] = _recursive_keyword_hits(raw_listings)[:100]
+    result["target_key_hits_in_listing_payload"] = _recursive_keyword_hits(
+        raw_listings
+    )[:100]
 
     for url in detail_urls[: config.source_audit_max_vehicles]:
         title = summaries.get(url, {}).get("Models", "") or next(
-            (card.get("title", "") for card in dom_cards if normalize_vehicle_url(card.get("url", "")) == url),
+            (
+                card.get("title", "")
+                for card in dom_cards
+                if normalize_vehicle_url(card.get("url", "")) == url
+            ),
             "",
         )
-        samples.append(VehicleSample(url=url, vendor_url=vendor_url, category_url=category_url, title=title))
+        samples.append(
+            VehicleSample(
+                url=url, vendor_url=vendor_url, category_url=category_url, title=title
+            )
+        )
 
     return result, samples
 
@@ -397,7 +462,12 @@ async def run_detail_strategy_matrix(
             "attempts": [],
         }
         try:
-            attempts = await _run_strategy(config, strategy, sample_subset, audit_dir / "detail_strategies" / strategy)
+            attempts = await _run_strategy(
+                config,
+                strategy,
+                sample_subset,
+                audit_dir / "detail_strategies" / strategy,
+            )
             result["attempts"] = attempts
         except Exception as exc:
             result["error"] = str(exc)
@@ -414,7 +484,9 @@ async def run_detail_strategy_matrix(
                 result["http_503_edgesuite_count"] += 1
             if attempt.get("timeout"):
                 result["timeout_count"] += 1
-            if attempt.get("detail_page_loaded_yes") and attempt.get("extracted_fields"):
+            if attempt.get("detail_page_loaded_yes") and attempt.get(
+                "extracted_fields"
+            ):
                 result["detail_success_count"] += 1
             else:
                 result["detail_failed_count"] += 1
@@ -431,7 +503,9 @@ async def run_detail_strategy_matrix(
         result["extracted_fields_list"] = sorted(fields_seen)
         result["missing_target_fields_list"] = sorted(missing)
         elapsed = time.perf_counter() - started
-        result["avg_seconds_per_detail"] = round(elapsed / max(1, len(sample_subset)), 2)
+        result["avg_seconds_per_detail"] = round(
+            elapsed / max(1, len(sample_subset)), 2
+        )
         result["recommendation"] = (
             "candidate" if result["fields_extracted_count"] else "no_target_field_gain"
         )
@@ -464,12 +538,23 @@ async def _run_strategy(
                 page = await context.new_page()
                 recorder.attach(page)
                 try:
-                    attempt = await _attempt_strategy_page(strategy, page, sample, attempt_dir)
+                    attempt = await _attempt_strategy_page(
+                        strategy, page, sample, attempt_dir
+                    )
                 finally:
                     payload = await recorder.flush()
-                    _write_json(attempt_dir / "network_response_index.json", payload["network_response_index"])
-                    _write_json(attempt_dir / "playwright_request_response_log.json", payload["playwright_request_response_log"])
-                    _write_json(attempt_dir / "discovered_api_endpoints.json", payload["discovered_api_endpoints"])
+                    _write_json(
+                        attempt_dir / "network_response_index.json",
+                        payload["network_response_index"],
+                    )
+                    _write_json(
+                        attempt_dir / "playwright_request_response_log.json",
+                        payload["playwright_request_response_log"],
+                    )
+                    _write_json(
+                        attempt_dir / "discovered_api_endpoints.json",
+                        payload["discovered_api_endpoints"],
+                    )
                     try:
                         await page.close()
                     except Exception:
@@ -492,18 +577,31 @@ async def _attempt_strategy_page(
     error = ""
     detail_page = page
     try:
-        if strategy in {"direct_url_fresh_context", "direct_url_persistent_context"} or strategy.startswith("browser_channel_"):
-            response = await page.goto(sample.url, wait_until="domcontentloaded", timeout=25_000)
+        if strategy in {
+            "direct_url_fresh_context",
+            "direct_url_persistent_context",
+        } or strategy.startswith("browser_channel_"):
+            response = await page.goto(
+                sample.url, wait_until="domcontentloaded", timeout=25_000
+            )
         elif strategy == "same_context_from_vendor":
-            await page.goto(sample.vendor_url, wait_until="domcontentloaded", timeout=35_000)
+            await page.goto(
+                sample.vendor_url, wait_until="domcontentloaded", timeout=35_000
+            )
             await _accept_cookies(page)
             await _settle_page(page)
-            response = await page.goto(sample.url, wait_until="domcontentloaded", timeout=25_000)
+            response = await page.goto(
+                sample.url, wait_until="domcontentloaded", timeout=25_000
+            )
         elif strategy == "same_page_navigation_from_category":
-            await page.goto(sample.category_url, wait_until="domcontentloaded", timeout=35_000)
+            await page.goto(
+                sample.category_url, wait_until="domcontentloaded", timeout=35_000
+            )
             await _accept_cookies(page)
             await _settle_page(page)
-            response = await page.goto(sample.url, wait_until="domcontentloaded", timeout=25_000)
+            response = await page.goto(
+                sample.url, wait_until="domcontentloaded", timeout=25_000
+            )
         elif strategy == "click_from_listing":
             response = await _click_listing(page, sample, delayed=False, modifier=False)
         elif strategy == "modifier_click_new_tab":
@@ -513,16 +611,26 @@ async def _attempt_strategy_page(
         elif strategy == "delayed_click_from_listing":
             response = await _click_listing(page, sample, delayed=True, modifier=False)
         elif strategy == "detail_after_warmup":
-            await page.goto("https://home.mobile.de/regional/nordrhein-westfalen/0.html", wait_until="domcontentloaded", timeout=35_000)
+            await page.goto(
+                "https://home.mobile.de/regional/nordrhein-westfalen/0.html",
+                wait_until="domcontentloaded",
+                timeout=35_000,
+            )
             await _accept_cookies(page)
             await _settle_page(page)
-            await page.goto(sample.vendor_url, wait_until="domcontentloaded", timeout=35_000)
+            await page.goto(
+                sample.vendor_url, wait_until="domcontentloaded", timeout=35_000
+            )
             await _settle_page(page)
-            await page.goto(sample.category_url, wait_until="domcontentloaded", timeout=35_000)
+            await page.goto(
+                sample.category_url, wait_until="domcontentloaded", timeout=35_000
+            )
             await _settle_page(page)
             response = await _click_listing(page, sample, delayed=True, modifier=False)
         else:
-            response = await page.goto(sample.url, wait_until="domcontentloaded", timeout=25_000)
+            response = await page.goto(
+                sample.url, wait_until="domcontentloaded", timeout=25_000
+            )
     except Exception as exc:
         error = str(exc)
         timeout = "timeout" in error.lower()
@@ -532,7 +640,9 @@ async def _attempt_strategy_page(
     body_text = ""
     try:
         html = await detail_page.content()
-        body_text = clean_text(await detail_page.locator("body").inner_text(timeout=5000))
+        body_text = clean_text(
+            await detail_page.locator("body").inner_text(timeout=5000)
+        )
     except Exception as exc:
         error = error or str(exc)
 
@@ -574,7 +684,9 @@ async def _attempt_strategy_page(
         "blocked_yes": blocked,
         "edgesuite_reference": _extract_edgesuite_reference(body_text or html),
         "extracted_fields": {key: value for key, value in extracted.items() if value},
-        "missing_target_fields": [field for field in TARGET_FIELDS if not extracted.get(field)],
+        "missing_target_fields": [
+            field for field in TARGET_FIELDS if not extracted.get(field)
+        ],
         "html_path": str(html_path),
         "screenshot_path": str(screenshot_path) if screenshot_saved else "",
         "response_headers_path": str(headers_path),
@@ -585,7 +697,9 @@ async def _attempt_strategy_page(
         _write_text(audit_root / "detail_attempt_result.html", html)
         if screenshot_saved:
             try:
-                _copy_binary(screenshot_path, audit_root / "detail_attempt_screenshot.png")
+                _copy_binary(
+                    screenshot_path, audit_root / "detail_attempt_screenshot.png"
+                )
             except Exception:
                 pass
         _write_json(audit_root / "detail_attempt_response_headers.json", headers)
@@ -593,7 +707,9 @@ async def _attempt_strategy_page(
     return attempt
 
 
-async def _click_listing(page: Page, sample: VehicleSample, *, delayed: bool, modifier: bool) -> Response | None:
+async def _click_listing(
+    page: Page, sample: VehicleSample, *, delayed: bool, modifier: bool
+) -> Response | None:
     await page.goto(sample.category_url, wait_until="domcontentloaded", timeout=35_000)
     await _accept_cookies(page)
     await _settle_page(page)
@@ -603,8 +719,12 @@ async def _click_listing(page: Page, sample: VehicleSample, *, delayed: bool, mo
         await locator.hover(timeout=8000)
         await page.wait_for_timeout(1500)
     try:
-        async with page.expect_navigation(wait_until="domcontentloaded", timeout=18_000) as nav:
-            await locator.click(timeout=8000, modifiers=["Control"] if modifier else None)
+        async with page.expect_navigation(
+            wait_until="domcontentloaded", timeout=18_000
+        ) as nav:
+            await locator.click(
+                timeout=8000, modifiers=["Control"] if modifier else None
+            )
         return await nav.value
     except Exception:
         await locator.click(timeout=8000, modifiers=["Control"] if modifier else None)
@@ -612,7 +732,9 @@ async def _click_listing(page: Page, sample: VehicleSample, *, delayed: bool, mo
         return None
 
 
-async def _click_listing_popup(page: Page, sample: VehicleSample) -> tuple[Page | None, Response | None]:
+async def _click_listing_popup(
+    page: Page, sample: VehicleSample
+) -> tuple[Page | None, Response | None]:
     await page.goto(sample.category_url, wait_until="domcontentloaded", timeout=35_000)
     await _accept_cookies(page)
     await _settle_page(page)
@@ -669,7 +791,9 @@ async def _open_browser_context(
         "locale": "de-DE",
         "timezone_id": "Europe/Berlin",
         "user_agent": DEFAULT_USER_AGENT,
-        "extra_http_headers": {"Accept-Language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"},
+        "extra_http_headers": {
+            "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
+        },
         "java_script_enabled": True,
     }
     if persistent_dir is not None:
@@ -685,7 +809,9 @@ async def _open_browser_context(
     return browser, context
 
 
-async def _close_context_and_browser(context: BrowserContext, browser: Browser | None) -> None:
+async def _close_context_and_browser(
+    context: BrowserContext, browser: Browser | None
+) -> None:
     try:
         await context.close()
     except Exception:
@@ -755,7 +881,9 @@ async def _dom_listing_cards(page: Page) -> list[dict[str, str]]:
 def _choose_category_url(vendor_url: str, html: str) -> str:
     options = parse_vehicle_category_options(html, require_positive_count=True)
     values = [str(option.get("value") or "") for option in options]
-    category = "Car" if "Car" in values else next((value for value in values if value), "")
+    category = (
+        "Car" if "Car" in values else next((value for value in values if value), "")
+    )
     if not category:
         return vendor_url
     parsed = urlparse(vendor_url)
@@ -782,7 +910,9 @@ def _raw_search_result_listings(html: str) -> list[dict[str, Any]]:
             if not isinstance(item, dict):
                 continue
             search_results = item.get("searchResults")
-            if isinstance(search_results, dict) and isinstance(search_results.get("listings"), list):
+            if isinstance(search_results, dict) and isinstance(
+                search_results.get("listings"), list
+            ):
                 for listing in search_results["listings"]:
                     if isinstance(listing, dict):
                         listings.append(listing)
@@ -805,7 +935,10 @@ def _valid_target_value(field: str, value: str) -> bool:
     if not value:
         return False
     lowered = value.lower()
-    if any(marker in lowered for marker in ["single_select", "{label}", "bis zu", "filter", "suchkriterien"]):
+    if any(
+        marker in lowered
+        for marker in ["single_select", "{label}", "bis zu", "filter", "suchkriterien"]
+    ):
         return False
     if len(value) > 120:
         return False
@@ -871,7 +1004,9 @@ def _search_audit_artifacts(audit_dir: Path) -> list[dict[str, str]]:
     return results[:1000]
 
 
-def _target_fields_found(search_results: list[dict[str, str]], matrix: list[dict[str, Any]]) -> dict[str, Any]:
+def _target_fields_found(
+    search_results: list[dict[str, str]], matrix: list[dict[str, Any]]
+) -> dict[str, Any]:
     found = {
         field: {
             "keyword_hits_in_returned_sources": 0,
@@ -896,7 +1031,9 @@ def _target_fields_found(search_results: list[dict[str, str]], matrix: list[dict
     return found
 
 
-def _merge_listing_payload_values(found: dict[str, Any], vendor_results: list[dict[str, Any]]) -> None:
+def _merge_listing_payload_values(
+    found: dict[str, Any], vendor_results: list[dict[str, Any]]
+) -> None:
     for vendor in vendor_results:
         for hit in vendor.get("target_key_hits_in_listing_payload", []):
             field = hit.get("field")
@@ -910,8 +1047,7 @@ def _merge_listing_payload_values(found: dict[str, Any], vendor_results: list[di
 
 def _recommend_detail_strategy(matrix: list[dict[str, Any]]) -> str:
     candidates = [
-        row for row in matrix
-        if int(row.get("fields_extracted_count", 0) or 0) > 0
+        row for row in matrix if int(row.get("fields_extracted_count", 0) or 0) > 0
     ]
     if not candidates:
         return "No tested detail strategy extracted target fields; keep listing fallback with source_audit evidence."
@@ -936,7 +1072,11 @@ def _browser_for_strategy(strategy: str, default_browser: str) -> str:
 
 def _looks_edgesuite(html: str, body_text: str) -> bool:
     lowered = f"{html}\n{body_text}".lower()
-    return "errors.edgesuite.net" in lowered or "edgesuite" in lowered or "an error occurred while processing your request" in lowered
+    return (
+        "errors.edgesuite.net" in lowered
+        or "edgesuite" in lowered
+        or "an error occurred while processing your request" in lowered
+    )
 
 
 def _looks_like_detail_url(url: str) -> bool:
@@ -977,7 +1117,9 @@ def _small_headers(headers: dict[str, str]) -> dict[str, str]:
     return {key: value for key, value in headers.items() if key.lower() in keep}
 
 
-def _should_capture_response_body(url: str, content_type: str, resource_type: str) -> bool:
+def _should_capture_response_body(
+    url: str, content_type: str, resource_type: str
+) -> bool:
     parsed = urlparse(url)
     if not parsed.netloc.endswith("mobile.de"):
         return False

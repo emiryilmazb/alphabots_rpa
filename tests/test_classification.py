@@ -1,4 +1,5 @@
 """Tests for vehicle classification logic."""
+
 import pytest
 import pandas as pd
 
@@ -95,7 +96,9 @@ def test_classification_metadata_helpers():
 
 
 def test_source_category_metadata_and_kastenwagen_override():
-    category, normalized, confidence, rule = classify_vehicle_type_details("Kastenwagen", "VanUpTo7500")
+    category, normalized, confidence, rule = classify_vehicle_type_details(
+        "Kastenwagen", "VanUpTo7500"
+    )
     assert category == "LKW"
     assert normalized == "Kastenwagen"
     assert confidence == 0.95

@@ -2,15 +2,19 @@ import pytest
 from unittest.mock import MagicMock
 from src.scraper.fetchers.uc_popup_fetcher import _collect_adaptive_wait_signals
 
+
 def test_collect_adaptive_wait_signals_success():
     driver = MagicMock()
-    
+
     def fake_execute(script):
-        if "readyState" in script: return "complete"
-        if "innerText" in script: return "Body text Baureihe"
+        if "readyState" in script:
+            return "complete"
+        if "innerText" in script:
+            return "Body text Baureihe"
         return ""
+
     driver.execute_script.side_effect = fake_execute
-    
+
     driver.current_url = "https://suchen.mobile.de/details"
     driver.title = "Car"
     body_mock = MagicMock()
@@ -20,6 +24,7 @@ def test_collect_adaptive_wait_signals_success():
     assert signals.ready_state == "complete"
     assert signals.is_mobile_domain is True
     assert signals.body_length > 10
+
 
 def test_collect_adaptive_wait_signals_exception_handled():
     driver = MagicMock()
@@ -42,10 +47,10 @@ class DummyConfig:
 from src.scraper.fetchers.uc_popup_fetcher import UcPopupFetcher
 from src.domain.exceptions import DetailPageBlockedError
 from unittest.mock import patch
-import time
 from src.main import _compute_run_summary
 from datetime import datetime
 import pandas as pd
+
 
 @patch("src.scraper.fetchers.uc_popup_fetcher._collect_adaptive_wait_signals")
 @patch("src.scraper.fetchers.uc_popup_fetcher.evaluate_detail_readiness")
@@ -54,13 +59,18 @@ def test_adaptive_wait_ready_increments(mock_evaluate, mock_collect):
     fetcher = UcPopupFetcher(config)
     driver = MagicMock()
     wait_mock = MagicMock()
-    
-    from src.scraper.fetchers.adaptive_wait import AdaptiveWaitDecision, AdaptiveWaitState, AdaptiveWaitSignals
-    
-    mock_evaluate.return_value = AdaptiveWaitDecision(AdaptiveWaitState.READY, "Ready", 0, None)
-    
+
+    from src.scraper.fetchers.adaptive_wait import (
+        AdaptiveWaitDecision,
+        AdaptiveWaitState,
+    )
+
+    mock_evaluate.return_value = AdaptiveWaitDecision(
+        AdaptiveWaitState.READY, "Ready", 0, None
+    )
+
     fetcher._wait_for_detail_dom(driver, wait_mock)
-    
+
     assert config.adaptive_wait_used_count == 1
     assert config.adaptive_wait_success_count == 1
     assert config.adaptive_wait_total_ms == 0
@@ -73,12 +83,18 @@ def test_adaptive_wait_timeout_increments(mock_evaluate, mock_collect):
     fetcher = UcPopupFetcher(config)
     driver = MagicMock()
     wait_mock = MagicMock()
-    
-    from src.scraper.fetchers.adaptive_wait import AdaptiveWaitDecision, AdaptiveWaitState
-    mock_evaluate.return_value = AdaptiveWaitDecision(AdaptiveWaitState.WAIT, "Wait", 0, None)
-    
+
+    from src.scraper.fetchers.adaptive_wait import (
+        AdaptiveWaitDecision,
+        AdaptiveWaitState,
+    )
+
+    mock_evaluate.return_value = AdaptiveWaitDecision(
+        AdaptiveWaitState.WAIT, "Wait", 0, None
+    )
+
     fetcher._wait_for_detail_dom(driver, wait_mock)
-    
+
     assert config.adaptive_wait_used_count == 1
     assert config.adaptive_wait_timeout_count == 1
     assert config.adaptive_wait_total_ms >= 4000
@@ -92,13 +108,19 @@ def test_adaptive_wait_error_increments(mock_evaluate, mock_collect):
     fetcher = UcPopupFetcher(config)
     driver = MagicMock()
     wait_mock = MagicMock()
-    
-    from src.scraper.fetchers.adaptive_wait import AdaptiveWaitDecision, AdaptiveWaitState
-    mock_evaluate.return_value = AdaptiveWaitDecision(AdaptiveWaitState.ERROR, "Error", 0, None)
-    
+
+    from src.scraper.fetchers.adaptive_wait import (
+        AdaptiveWaitDecision,
+        AdaptiveWaitState,
+    )
+
+    mock_evaluate.return_value = AdaptiveWaitDecision(
+        AdaptiveWaitState.ERROR, "Error", 0, None
+    )
+
     with pytest.raises(DetailPageBlockedError):
         fetcher._wait_for_detail_dom(driver, wait_mock)
-    
+
     assert config.adaptive_wait_used_count == 1
     assert config.adaptive_wait_error_count == 1
     assert config.adaptive_wait_total_ms == 0
@@ -109,9 +131,9 @@ def test_safe_profile_does_not_increment_adaptive_metrics():
     fetcher = UcPopupFetcher(config)
     driver = MagicMock()
     wait_mock = MagicMock()
-    
+
     fetcher._wait_for_detail_dom(driver, wait_mock)
-    
+
     assert config.adaptive_wait_used_count == 0
     assert config.adaptive_wait_success_count == 0
     assert config.adaptive_wait_timeout_count == 0
@@ -132,12 +154,21 @@ def test_run_summary_includes_adaptive_metrics():
     config.detail_policy = "missing-required"
     config.vendor_concurrency = 1
     config.vehicle_detail_concurrency = 1
-    
+
     df_vendors = pd.DataFrame([{"Händler ID": "C1", "Händlername": "Demo"}])
     df_cars = pd.DataFrame([{"Händler ID": "C1", "Vehicle_URL": "url"}])
-    
-    summary = _compute_run_summary("test-id", datetime.now(), datetime.now(), config, df_vendors, df_cars, df_cars, [])
-    
+
+    summary = _compute_run_summary(
+        "test-id",
+        datetime.now(),
+        datetime.now(),
+        config,
+        df_vendors,
+        df_cars,
+        df_cars,
+        [],
+    )
+
     assert summary["adaptive_wait_used_count"] == 2
     assert summary["adaptive_wait_success_count"] == 1
     assert summary["adaptive_wait_timeout_count"] == 1
