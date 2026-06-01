@@ -24,8 +24,12 @@ def test_cli_parsing_and_command_construction():
                 with patch('os.path.getmtime', return_value=1.0):
                     run_4shard.main()
                 
-    cleanup_calls = [c[0][0] for c in mock_run.call_args_list if isinstance(c[0][0], str) and "docker rm" in c[0][0]]
-    assert len(cleanup_calls) > 0
+    cleanup_calls = [c[0][0] for c in mock_run.call_args_list if isinstance(c[0][0], str) and "docker compose -p mobilede_shard_" in c[0][0]]
+    assert len(cleanup_calls) == 2
+    assert not any(
+        isinstance(c[0][0], str) and "docker rm -f $(docker ps -aq)" in c[0][0]
+        for c in mock_run.call_args_list
+    )
     
     assert mock_popen.call_count == 2
     
@@ -35,7 +39,9 @@ def test_cli_parsing_and_command_construction():
     for cmd in [cmd0, cmd1]:
         assert "uc-popup" in cmd
         assert "xvfb" in cmd
-        assert "UC_BLOCK_RESOURCES=true" in cmd
+        assert "UC_BLOCK_RESOURCES=false" in cmd
+        assert "--uc-wait-profile safe" in cmd
+        assert "--uc-block-resources false" in cmd
         assert "--max-vendors 0" in cmd
         assert "--max-cars-per-vendor 0" in cmd
         
@@ -73,3 +79,26 @@ def test_cli_max_pages_forwarding():
             assert mock_popen.called
             cmd_args = mock_popen.call_args[0][0]
             assert '--max-pages 40' in cmd_args[-1]
+
+
+def test_cli_forwards_uc_wait_profile_and_resource_blocking():
+    test_args = [
+        'run_4shard.py',
+        '--shard-count', '1',
+        '--uc-wait-profile', 'adaptive',
+        '--uc-block-resources', 'true',
+    ]
+    with patch.object(sys, 'argv', test_args):
+        with patch('subprocess.Popen') as mock_popen, patch('subprocess.run') as mock_run:
+            mock_process = MagicMock()
+            mock_popen.return_value = mock_process
+            mock_run_result = MagicMock()
+            mock_run_result.returncode = 0
+            mock_run.return_value = mock_run_result
+
+            run_4shard.main()
+
+            cmd_args = mock_popen.call_args[0][0]
+            assert 'UC_BLOCK_RESOURCES=true' in cmd_args[-1]
+            assert '--uc-wait-profile adaptive' in cmd_args[-1]
+            assert '--uc-block-resources true' in cmd_args[-1]

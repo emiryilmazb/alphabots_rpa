@@ -32,6 +32,8 @@ data/runs/*
 !data/runs/.gitkeep
 data/detail_cache/
 data/enriched_output/
+data/final_submission_input/
+data/final_submission_output/
 final_delivery/
 
 

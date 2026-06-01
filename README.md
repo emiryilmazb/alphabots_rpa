@@ -47,28 +47,27 @@ docker compose build scraper
 
 ## Recommended Commands
 
-Stable default/safe profile example:
+Production/server command for the deployable Docker/Xvfb path:
+
+```powershell
+venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 0 --max-cars-per-vendor 0 --max-pages 100 --shard-count 1 --clean --uc-wait-profile adaptive --uc-block-resources false
+```
+
+This is an explicit production profile, not a change to the CLI defaults. Docker/Xvfb remains the deployable architecture for EC2/ECS-style execution. One shard is safest while the live source is blocking detail pages; two shards can be used if the source remains stable. Four shards are intended for controlled validation or benchmarking, not for a high-detail final run when blocking is active.
+
+Conservative capped validation command:
 
 ```powershell
 venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 25 --max-cars-per-vendor 10 --max-pages 40 --shard-count 4 --clean --uc-wait-profile safe --uc-block-resources true
 ```
 
-Full uncapped command should be documented cautiously, not recommended for casual validation:
-
-```powershell
-venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 0 --max-cars-per-vendor 0 --shard-count 4 --clean --uc-wait-profile safe --uc-block-resources true
-```
-
-Adaptive opt-in example:
+Adaptive capped validation example:
 
 ```powershell
 venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 25 --max-cars-per-vendor 10 --max-pages 40 --shard-count 4 --clean --uc-wait-profile adaptive --uc-block-resources true
 ```
 
-Make clear:
-- adaptive is experimental/opt-in
-- adaptive is not default
-- default remains safe
+Adaptive wait must be selected explicitly with `--uc-wait-profile adaptive`; it is not an implicit local Chrome/CDP dependency.
 
 ## Execution Modes
 
@@ -104,6 +103,16 @@ Start a separate Chrome profile first:
 ```
 
 Then run with `--detail-open-strategy host-chrome-cdp --chrome-cdp-url http://127.0.0.1:9222` and `--vehicle-detail-concurrency 1`. If the CDP endpoint is unavailable, or if the page classifies as a block/CAPTCHA/login challenge, the run records the failure and keeps listing fallback data. The strategy does not solve CAPTCHA and closes only tabs it creates.
+
+CDP is not required for server deployment. It is an optional local recovery path when a normal user browser can access pages that automated browser contexts cannot.
+
+Retryable local enrichment can be run after a normal scrape:
+
+```powershell
+venv\Scripts\python.exe tools\enrich_vehicle_details.py --input-cars <cars_raw.json> --output-cars <cars_enriched.json> --cache-dir data\detail_cache\host_cdp_enrichment --methods cache,listing,host-chrome-cdp,manual-html --chrome-cdp-url http://127.0.0.1:9222 --max-vehicles 25 --sleep-seconds 12 --sleep-jitter-seconds 8 --stop-after-blocks 5 --max-block-rate 0.4 --resume true --retry-only-missing true
+```
+
+The enrichment tool uses cached parsed detail fields before any live request, records failed IDs for later retry, disables live methods when blocking thresholds are hit, and only fills empty fields with values extracted from source HTML.
 
 ## CLI Options
 
@@ -270,6 +279,8 @@ Targeted source audit found that some listing payloads expose previous-owner cou
 UC popup and host Chrome CDP are slower than listing extraction and should be run with detail concurrency 1. If the UC dependency stack is unavailable, the run records `uc_dependency_missing` with the message `uc-popup strategy requires undetected_chromedriver and local Chrome.` and preserves listing fallback output. If host Chrome CDP is unavailable, the run records `host_chrome_cdp_failed` / `host_chrome_cdp_*` metrics and preserves listing fallback output.
 
 Financing fields are populated only when mobile.de exposes a financing offer in the listing payload or detail source. Dealer homepage, second phone, mobile phone, and fax fields can be sparse because not every dealer publishes those values.
+
+No fake values are inserted. `Andere` is the approved fallback for task-defined classification values that do not map to Deutschland, Italien, Korea, Japan, Frankreich, PKW, Motorrad, Freizeitfahrzeuge, or LKW.
 
 Regional search state and actual vendor location are kept separate:
 
