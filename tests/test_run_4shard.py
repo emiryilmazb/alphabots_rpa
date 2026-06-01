@@ -69,7 +69,7 @@ def test_merge_sequencing():
     test_args = ["run_4shard.py", "--shard-count", "2"]
     with patch.object(sys, "argv", test_args):
         with (
-            patch("subprocess.Popen") as mock_popen,
+            patch("subprocess.Popen"),
             patch("subprocess.run") as mock_run,
         ):
             # Simulate only 1 shard returning a run directory

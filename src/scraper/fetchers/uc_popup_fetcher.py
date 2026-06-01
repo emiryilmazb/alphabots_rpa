@@ -17,7 +17,12 @@ from urllib.parse import parse_qs, urlparse
 from bs4 import BeautifulSoup
 
 from src.config import ScraperConfig
+from src.domain.exceptions import DetailPageBlockedError
 from src.scraper.detail_page import classify_detail_page
+from src.scraper.fetchers.adaptive_wait import (
+    AdaptiveWaitState,
+    evaluate_detail_readiness,
+)
 from src.scraper.fetchers.base import FetchResult
 from src.scraper.parsers import (
     clean_text,
@@ -59,18 +64,12 @@ class UcPopupResult:
     artifacts: UcPopupArtifacts = field(default_factory=UcPopupArtifacts)
 
 
-from src.scraper.fetchers.adaptive_wait import (
-    AdaptiveWaitState,
-    evaluate_detail_readiness,
-)
-from src.domain.exceptions import DetailPageBlockedError
-
-
 def _collect_adaptive_wait_signals(driver):
     from src.scraper.fetchers.adaptive_wait import AdaptiveWaitSignals
 
     try:
-        ready_state = str(driver.execute_script("return document.readyState;") or "")
+        ready_state = str(driver.execute_script(
+            "return document.readyState;") or "")
         current_url = str(driver.current_url or "")
         title = str(driver.title or "")
         try:
@@ -80,7 +79,8 @@ def _collect_adaptive_wait_signals(driver):
             if not body_text:
                 from selenium.webdriver.common.by import By
 
-                body_text = str(driver.find_element(By.TAG_NAME, "body").text or "")
+                body_text = str(driver.find_element(
+                    By.TAG_NAME, "body").text or "")
         except Exception:
             body_text = ""
         return AdaptiveWaitSignals(
@@ -174,13 +174,15 @@ class UcPopupFetcher:
 
             if reuse_enabled and self._driver:
                 if listing_url != self._listing_url:
-                    self._increment("uc_browser_restarted_on_listing_change_count")
+                    self._increment(
+                        "uc_browser_restarted_on_listing_change_count")
                     self.close()
 
             if not self._driver:
                 self._driver = self._start_driver(uc)
                 self._increment("uc_browser_started_count")
-                logger.info("UC popup navigating to listing source: %s", listing_url)
+                logger.info(
+                    "UC popup navigating to listing source: %s", listing_url)
                 self._driver.get(listing_url)
                 self._listing_url = listing_url
                 self._main_handle = self._driver.current_window_handle
@@ -265,7 +267,8 @@ class UcPopupFetcher:
             html = self._driver.page_source or ""
             classification = classify_detail_page(html, final_url, title)
 
-            artifacts_mode = getattr(self.config, "detail_artifacts_mode", "errors")
+            artifacts_mode = getattr(
+                self.config, "detail_artifacts_mode", "errors")
             is_error = classification.classification != "real_detail_page"
             if (
                 artifacts_mode == "all"
@@ -583,7 +586,8 @@ class UcPopupFetcher:
                 seen.add(url)
                 links.append(
                     LiveLink(
-                        url=url, vehicle_id=vehicle_id, text=clean_text(element.text)
+                        url=url, vehicle_id=vehicle_id, text=clean_text(
+                            element.text)
                     )
                 )
                 if len(links) >= max_live_links:
@@ -601,7 +605,8 @@ class UcPopupFetcher:
                     continue
                 seen.add(url)
                 links.append(
-                    LiveLink(url=url, vehicle_id=vehicle_id, text="live_page_payload")
+                    LiveLink(url=url, vehicle_id=vehicle_id,
+                             text="live_page_payload")
                 )
                 if len(links) >= max_live_links:
                     break
@@ -664,7 +669,8 @@ class UcPopupFetcher:
                 elif decision.state == AdaptiveWaitState.ERROR:
                     self._increment("adaptive_wait_error_count")
                     self._increment("adaptive_wait_total_ms", elapsed_ms)
-                    max_ms = int(getattr(self.config, "adaptive_wait_max_ms", 0) or 0)
+                    max_ms = int(
+                        getattr(self.config, "adaptive_wait_max_ms", 0) or 0)
                     if elapsed_ms > max_ms:
                         setattr(self.config, "adaptive_wait_max_ms", elapsed_ms)
                     raise DetailPageBlockedError(
@@ -702,7 +708,8 @@ class UcPopupFetcher:
         visible_text_path = output_dir / f"{base}_visible_text.txt"
         result_path = output_dir / f"{base}_result.json"
         html_path.write_text(html, encoding="utf-8")
-        visible_text = clean_text(BeautifulSoup(html, "lxml").get_text(" ", strip=True))
+        visible_text = clean_text(BeautifulSoup(
+            html, "lxml").get_text(" ", strip=True))
         visible_text_path.write_text(visible_text, encoding="utf-8")
         try:
             driver.save_screenshot(str(screenshot_path))
@@ -724,7 +731,8 @@ class UcPopupFetcher:
         )
         return UcPopupArtifacts(
             html_path=str(html_path),
-            screenshot_path=str(screenshot_path) if str(screenshot_path) else "",
+            screenshot_path=str(screenshot_path) if str(
+                screenshot_path) else "",
             visible_text_path=str(visible_text_path),
             result_path=str(result_path),
         )
@@ -751,7 +759,8 @@ class UcPopupFetcher:
             self._increment("popup_capture_failed_count")
 
     def _increment(self, name: str, amount: int = 1) -> None:
-        setattr(self.config, name, int(getattr(self.config, name, 0) or 0) + amount)
+        setattr(self.config, name, int(
+            getattr(self.config, name, 0) or 0) + amount)
 
     def _close_driver(self, driver) -> None:
         try:

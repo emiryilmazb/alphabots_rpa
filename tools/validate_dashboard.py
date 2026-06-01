@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.models import (
+from src.models import (  # noqa: E402
     FINANCING_REQUIRED_FIELDS,
     VEHICLE_REQUIRED_FIELDS,
     VENDOR_COLUMNS,
@@ -53,7 +53,8 @@ def validate_dashboard(
     print(f"Found sheets: {sheets}")
 
     all_passed = True
-    missing_sheets = [sheet for sheet in REQUIRED_CONTROL_SHEETS if sheet not in sheets]
+    missing_sheets = [
+        sheet for sheet in REQUIRED_CONTROL_SHEETS if sheet not in sheets]
     if missing_sheets:
         print(f"Error: Missing required sheets: {missing_sheets}")
         all_passed = False
@@ -96,8 +97,10 @@ def validate_dashboard(
     vehicle_required = list(
         dict.fromkeys([*VEHICLE_REQUIRED_FIELDS, *FINANCING_REQUIRED_FIELDS])
     )
-    all_passed &= _validate_columns(vehicle_sheet, vehicles_df, vehicle_required)
-    all_passed &= _validate_columns(vehicle_sheet, vehicles_df, CLASSIFICATION_COLUMNS)
+    all_passed &= _validate_columns(
+        vehicle_sheet, vehicles_df, vehicle_required)
+    all_passed &= _validate_columns(
+        vehicle_sheet, vehicles_df, CLASSIFICATION_COLUMNS)
     all_passed &= _validate_classifications(vehicles_df)
 
     if all_passed:
@@ -111,10 +114,12 @@ def _validate_rows(
     name: str, count: int, *, minimum: int, expected: int | None
 ) -> bool:
     if expected is not None and count != expected:
-        print(f"Error: Expected exactly {expected} rows in {name}, got {count}")
+        print(
+            f"Error: Expected exactly {expected} rows in {name}, got {count}")
         return False
     if count < minimum:
-        print(f"Error: Expected at least {minimum} rows in {name}, got {count}")
+        print(
+            f"Error: Expected at least {minimum} rows in {name}, got {count}")
         return False
     print(f"{name} row count: {count} (OK)")
     return True

@@ -2,7 +2,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Iterator
 from typing import Any
 from typing import Iterator
 from src.scraper.parser_modules.normalization import clean_text
@@ -20,12 +19,13 @@ def extract_next_payloads(html: str) -> list[Any]:
     element is often another JSON value prefixed by an internal id like ``29:``.
     """
     payloads: list[Any] = []
-    scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, flags=re.S | re.I)
+    scripts = re.findall(
+        r"<script[^>]*>(.*?)</script>", html, flags=re.S | re.I)
     for script in scripts:
         script = script.strip()
         if not script.startswith("self.__next_f.push("):
             continue
-        inner = script[len("self.__next_f.push(") :]
+        inner = script[len("self.__next_f.push("):]
         if inner.endswith(");"):
             inner = inner[:-2]
         elif inner.endswith(")"):

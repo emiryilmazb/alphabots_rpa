@@ -84,7 +84,6 @@ async def run_pipeline(config: ScraperConfig) -> None:
         config.state, config.state.replace("-", " ").title()
     )
     errors: list[dict[str, Any]] = []
-    dealers_data: list[dict[str, str]] = []
     vendors: list[dict[str, Any]] = []
     all_cars: list[dict[str, Any]] = []
 
@@ -1018,16 +1017,6 @@ def _compute_run_summary(
     errors: list[dict[str, Any]],
 ) -> dict[str, Any]:
     duration = finished_at - started_at
-    vendor_error_count = sum(
-        1
-        for e in errors
-        if str(e.get("stage") or e.get("type", "")).startswith("vendor")
-    )
-    vehicle_error_count = sum(
-        1
-        for e in errors
-        if str(e.get("stage") or e.get("type", "")).startswith("vehicle")
-    )
     mode_str = (
         "process_existing" if getattr(config, "process_existing", False) else "scrape"
     )

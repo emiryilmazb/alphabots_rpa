@@ -33,9 +33,10 @@ def test_merge_duplicate(tmp_path):
     s0 = "tests/fixtures/shards/shard0"
     s_dup = "tests/fixtures/shards/shard_duplicate"
     with patch.object(
-        sys, "argv", ["merge_runs.py", "--runs", s0, s_dup, "--output", out_dir]
+        sys, "argv", ["merge_runs.py", "--runs",
+                      s0, s_dup, "--output", out_dir]
     ):
-        with patch("subprocess.run") as mock_run:
+        with patch("subprocess.run"):
             merge()
 
     ven_dir = os.path.join(out_dir, "raw", "vendors")
@@ -64,9 +65,10 @@ def test_merge_new_format(tmp_path):
         json.dump([{"url": "U02"}, {"url": "U03"}], f)
 
     with patch.object(
-        sys, "argv", ["merge_runs.py", "--runs", str(s0), str(s1), "--output", out_dir]
+        sys, "argv", ["merge_runs.py", "--runs",
+                      str(s0), str(s1), "--output", out_dir]
     ):
-        with patch("subprocess.run") as mock_run:
+        with patch("subprocess.run"):
             merge()
 
     ven_out = os.path.join(out_dir, "raw", "vendors_raw.json")
@@ -108,7 +110,8 @@ def test_merge_dict_shaped_json(tmp_path):
     }
     with open(raw_dir / "vendors_raw.json", "w", encoding="utf-8") as f:
         json.dump(vendors_dict, f)
-    cars_dict = {"U1": {"url": "U1", "title": "Car 1"}, "U2": {"title": "Car 2"}}
+    cars_dict = {"U1": {"url": "U1", "title": "Car 1"},
+                 "U2": {"title": "Car 2"}}
     with open(raw_dir / "cars_raw.json", "w", encoding="utf-8") as f:
         json.dump(cars_dict, f)
 

@@ -1,7 +1,9 @@
-SEARCH_BASE = "https://suchen.mobile.de"
 import re
 from typing import Any
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urljoin, urlparse, urlunparse
+
+SEARCH_BASE = "https://suchen.mobile.de"
+HOME_BASE = "https://home.mobile.de"
 
 
 def clean_text(value: Any) -> str:

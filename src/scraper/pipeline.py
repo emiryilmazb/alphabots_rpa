@@ -174,10 +174,9 @@ class RegionalDiscoveryProducer:
         finally:
             await browser.close()
             try:
-                if "vehicle_scraper" in locals() and hasattr(
-                    vehicle_scraper, "uc_popup_fetcher"
-                ):
-                    await vehicle_scraper.close()
+                vs = locals().get("vehicle_scraper")
+                if vs and hasattr(vs, "uc_popup_fetcher"):
+                    await vs.close()
             except Exception:
                 pass
 
@@ -208,6 +207,7 @@ class VendorWorker:
     async def run(self) -> None:
         browser = BrowserManager(self.config, role="vendor")
         started = False
+        vehicle_scraper = None
         try:
             vendor_scraper = VendorScraper(browser, self.config)
             vehicle_scraper = VehicleScraper(browser, self.config)
@@ -228,7 +228,7 @@ class VendorWorker:
                             )
                             try:
                                 await browser.close()
-                            except:
+                            except Exception:
                                 pass
                         await browser.start()
                         started = True
@@ -242,10 +242,9 @@ class VendorWorker:
         finally:
             await browser.close()
             try:
-                if "vehicle_scraper" in locals() and hasattr(
-                    vehicle_scraper, "uc_popup_fetcher"
-                ):
-                    await vehicle_scraper.close()
+                vs = locals().get("vehicle_scraper")
+                if vs and hasattr(vs, "uc_popup_fetcher"):
+                    await vs.close()
             except Exception:
                 pass
 
@@ -414,6 +413,7 @@ class VehicleDetailWorker:
 
     async def run(self) -> None:
         browser = BrowserManager(self.config, role="vehicle_detail")
+        vehicle_scraper = None
         try:
             vehicle_scraper = VehicleScraper(browser, self.config)
             while True:
@@ -427,10 +427,9 @@ class VehicleDetailWorker:
         finally:
             await browser.close()
             try:
-                if "vehicle_scraper" in locals() and hasattr(
-                    vehicle_scraper, "uc_popup_fetcher"
-                ):
-                    await vehicle_scraper.close()
+                vs = locals().get("vehicle_scraper")
+                if vs and hasattr(vs, "uc_popup_fetcher"):
+                    await vs.close()
             except Exception:
                 pass
 
@@ -535,9 +534,11 @@ class VehicleDetailWorker:
                 )
             else:
                 _increment_config_counter(self.config, "detail_needed_count")
-                _increment_config_counter(self.config, "detail_attempted_count")
+                _increment_config_counter(
+                    self.config, "detail_attempted_count")
                 if getattr(self.config, "detail_open_strategy", "") == "uc-popup":
-                    _increment_config_counter(self.config, "uc_popup_attempted_count")
+                    _increment_config_counter(
+                        self.config, "uc_popup_attempted_count")
                 fallback = {
                     **job.fallback,
                     "source_vendor_url": job.normalized_vendor_url,
@@ -587,7 +588,8 @@ class VehicleDetailWorker:
                         except Exception:
                             pass
                     else:
-                        _increment_config_counter(self.config, "detail_failed_count")
+                        _increment_config_counter(
+                            self.config, "detail_failed_count")
 
                     failure_message = (
                         _detail_failure_message(browser, vehicle) or error_msg
@@ -625,7 +627,8 @@ class VehicleDetailWorker:
                     _copy_detail_metadata(fallback_vehicle, vehicle)
                     vehicle = fallback_vehicle
                 else:
-                    _increment_config_counter(self.config, "detail_success_count")
+                    _increment_config_counter(
+                        self.config, "detail_success_count")
             vehicle["run_id"] = self.run_id
             vehicle.setdefault("source_vendor_url", job.normalized_vendor_url)
             vehicle.setdefault("source_vehicle_url", job.vehicle_url)
@@ -674,7 +677,8 @@ async def run_concurrent_pipeline(
     await state.start_run(run_id, config)
     await state.requeue_processing_jobs(run_id)
 
-    vendor_queue: asyncio.Queue = asyncio.Queue(maxsize=config.vendor_concurrency * 2)
+    vendor_queue: asyncio.Queue = asyncio.Queue(
+        maxsize=config.vendor_concurrency * 2)
     vehicle_queue: asyncio.Queue = asyncio.Queue(
         maxsize=config.vehicle_detail_concurrency * 4
     )
@@ -725,7 +729,8 @@ async def run_concurrent_pipeline(
         for job in pending_vehicles:
             await vehicle_queue.put(job)
         if pending_vehicles:
-            logger.info("Requeued %d pending vehicle jobs.", len(pending_vehicles))
+            logger.info("Requeued %d pending vehicle jobs.",
+                        len(pending_vehicles))
 
         discovered_vendor_count = 0
         enqueued_vendor_count = 0
@@ -867,7 +872,8 @@ def _detail_failure_message(browser: BrowserManager, vehicle: dict[str, Any]) ->
     detail_status = str(vehicle.get("detail_status", "")).strip()
     if detail_status:
         parts.append(f"detail_status={detail_status}")
-    detail_failure_reason = str(vehicle.get("detail_failure_reason", "")).strip()
+    detail_failure_reason = str(vehicle.get(
+        "detail_failure_reason", "")).strip()
     if detail_failure_reason:
         parts.append(f"detail_failure_reason={detail_failure_reason}")
     status_code = _detail_status_code(browser, vehicle)

@@ -14,7 +14,8 @@ logger = logging.getLogger("mobile_de.parsers")
 
 HOME_BASE = "https://home.mobile.de"
 SEARCH_BASE = "https://suchen.mobile.de"
-DEALER_URL_RE = re.compile(r"https?://home\.mobile\.de/[A-Za-z0-9][A-Za-z0-9_-]*")
+DEALER_URL_RE = re.compile(
+    r"https?://home\.mobile\.de/[A-Za-z0-9][A-Za-z0-9_-]*")
 LISTING_ID_RE = re.compile(r'"listingId"\s*:\s*(\d{5,})')
 
 
@@ -329,7 +330,8 @@ def parse_regional_page(html: str) -> list[dict[str, str]]:
             continue
         card = _nearest_card(link)
         name = _extract_name_from_link(link)
-        street, plz, city = _extract_address_from_container(card or link.parent)
+        street, plz, city = _extract_address_from_container(
+            card or link.parent)
         dealers[url] = {
             "name": name,
             "url": url,
@@ -342,7 +344,8 @@ def parse_regional_page(html: str) -> list[dict[str, str]]:
     for raw_url in DEALER_URL_RE.findall(html):
         url = normalize_dealer_url(raw_url)
         if _looks_like_dealer_link(url) and url not in dealers:
-            dealers[url] = {"name": "", "url": url, "street": "", "plz": "", "city": ""}
+            dealers[url] = {"name": "", "url": url,
+                            "street": "", "plz": "", "city": ""}
 
     result = sorted(dealers.values(), key=lambda item: item["url"].lower())
     logger.info("Parsed %d dealers from regional page.", len(result))
@@ -408,11 +411,13 @@ def _extract_address_from_container(container: Tag | None) -> tuple[str, str, st
         return "", "", ""
     text = clean_text(container.get_text(" ", strip=True))
     plz, city = "", ""
-    m = re.search(r"\b(?:DE[-\s]?)?(\d{5})\s+([A-ZÄÖÜ][\wÄÖÜäöüß .'\-]+)", text)
+    m = re.search(
+        r"\b(?:DE[-\s]?)?(\d{5})\s+([A-ZÄÖÜ][\wÄÖÜäöüß .'\-]+)", text)
     if m:
         plz = m.group(1)
         city = clean_text(m.group(2))
-        city = re.split(r"\s{2,}|Kontakt|Telefon|Tel\.?|Bewertung", city)[0].strip(" ,")
+        city = re.split(r"\s{2,}|Kontakt|Telefon|Tel\.?|Bewertung", city)[
+            0].strip(" ,")
 
     street = ""
     street_re = re.compile(
@@ -500,7 +505,8 @@ def _extract_known_label_pairs(soup: BeautifulSoup, specs: dict[str, str]) -> No
         if sibling:
             value = clean_text(sibling.get_text(" ", strip=True))
         if not value and index + 1 < len(elements):
-            candidate = clean_text(elements[index + 1].get_text(" ", strip=True))
+            candidate = clean_text(
+                elements[index + 1].get_text(" ", strip=True))
             if candidate.lower().rstrip(":") not in labels_lower:
                 value = candidate
         _add_spec(specs, canonical, value)
@@ -564,7 +570,7 @@ def _extract_window_initial_state(html: str) -> dict[str, Any]:
             level -= 1
             if level == 0:
                 try:
-                    data = json.loads(html[start : index + 1])
+                    data = json.loads(html[start: index + 1])
                 except json.JSONDecodeError:
                     return {}
                 return data if isinstance(data, dict) else {}
@@ -586,7 +592,8 @@ def _extract_from_next_text(html: str, specs: dict[str, str]) -> None:
         canonical = _canonical_spec_label(label) or label
         if canonical in specs:
             continue
-        match = re.search(rf"{re.escape(label)}\s*[:\-]\s*([^|•]{{1,80}})", text)
+        match = re.search(
+            rf"{re.escape(label)}\s*[:\-]\s*([^|•]{{1,80}})", text)
         if match:
             _add_spec(specs, canonical, clean_text(match.group(1)))
 
@@ -673,7 +680,8 @@ def _canonical_spec_label(label: str) -> str:
         return "CO₂-Emissionen"
     if label in KNOWN_SPEC_LABELS:
         return SPEC_LABEL_ALIASES.get(label, label)
-    alias_map = {key.lower(): value for key, value in SPEC_LABEL_ALIASES.items()}
+    alias_map = {key.lower(): value for key,
+                 value in SPEC_LABEL_ALIASES.items()}
     if lowered in alias_map:
         return alias_map[lowered]
     for known in KNOWN_SPEC_LABELS:
@@ -736,7 +744,8 @@ def _parse_vehicle_json_ld(html: str) -> dict[str, str]:
             schema_type = item.get("@type", "")
             if schema_type not in {"Vehicle", "Car", "Product"}:
                 continue
-            offers = item.get("offers") if isinstance(item.get("offers"), dict) else {}
+            offers = item.get("offers") if isinstance(
+                item.get("offers"), dict) else {}
             brand = item.get("brand")
             if isinstance(brand, dict):
                 brand = brand.get("name")
@@ -749,14 +758,27 @@ def _parse_vehicle_json_ld(html: str) -> dict[str, str]:
     return {}
 
 
-from src.scraper.parser_modules.financing import parse_financing_data
-from src.scraper.parser_modules.common import (
+from src.scraper.parser_modules.financing import parse_financing_data  # noqa: E402
+from src.scraper.parser_modules.common import (  # noqa: E402
     walk_json,
     iter_dicts,
     _none_if_placeholder,
     extract_next_payloads,
 )
-from src.scraper.parser_modules.vehicle_listing import (
-    parse_vehicle_title,
-    parse_vehicle_price,
+from src.scraper.parser_modules.vehicle_listing import (  # noqa: E402
+    parse_vehicle_title,  # noqa: F401
+    parse_vehicle_price,  # noqa: F401
+    parse_vehicle_listing_summaries,  # noqa: F401
+    parse_vehicle_listing_urls,  # noqa: F401
+    parse_vehicle_category_options,  # noqa: F401
+    parse_vehicle_category_values,  # noqa: F401
+    split_vehicle_title,  # noqa: F401
+    extract_listing_attribute_fields,  # noqa: F401
+    parse_vehicle_urls_from_next_data,  # noqa: F401
+    _first_match,  # noqa: F401
+)
+from src.scraper.parser_modules.vendor import (  # noqa: E402
+    parse_vendor_next_data,  # noqa: F401
+    parse_vendor_json_ld,  # noqa: F401
+    parse_vendor_vehicle_count,  # noqa: F401
 )

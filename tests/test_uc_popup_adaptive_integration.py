@@ -44,12 +44,12 @@ class DummyConfig:
         self.adaptive_wait_max_ms = 0
 
 
-from src.scraper.fetchers.uc_popup_fetcher import UcPopupFetcher
-from src.domain.exceptions import DetailPageBlockedError
-from unittest.mock import patch
-from src.main import _compute_run_summary
-from datetime import datetime
-import pandas as pd
+from src.scraper.fetchers.uc_popup_fetcher import UcPopupFetcher  # noqa: E402
+from src.domain.exceptions import DetailPageBlockedError  # noqa: E402
+from unittest.mock import patch  # noqa: E402
+from src.main import _compute_run_summary  # noqa: E402
+from datetime import datetime  # noqa: E402
+import pandas as pd  # noqa: E402
 
 
 @patch("src.scraper.fetchers.uc_popup_fetcher._collect_adaptive_wait_signals")

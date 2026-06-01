@@ -146,7 +146,8 @@ class NetworkRecorder:
         )
 
     def _on_response(self, response: Response) -> None:
-        self._tasks.append(asyncio.create_task(self._record_response(response)))
+        self._tasks.append(asyncio.create_task(
+            self._record_response(response)))
 
     async def _record_response(self, response: Response) -> None:
         request = response.request
@@ -170,7 +171,8 @@ class NetworkRecorder:
                         self.response_body_dir
                         / f"{_digest(response.url)}{_body_suffix(content_type)}"
                     )
-                    body_path.write_text(text, encoding="utf-8", errors="ignore")
+                    body_path.write_text(
+                        text, encoding="utf-8", errors="ignore")
                     entry["body_path"] = str(body_path)
                     entry["body_excerpt"] = clean_text(text[:500])
             except Exception as exc:
@@ -230,7 +232,8 @@ async def run_source_audit(
             vendor_urls = await _discover_vendor_urls(page, config)
             per_vendor_sample_cap = max(
                 1,
-                (config.source_audit_max_vehicles + config.source_audit_max_vendors - 1)
+                (config.source_audit_max_vehicles +
+                 config.source_audit_max_vendors - 1)
                 // config.source_audit_max_vendors,
             )
             for index, vendor_url in enumerate(
@@ -341,7 +344,7 @@ async def _audit_vendor(
     }
     samples: list[VehicleSample] = []
 
-    response = await page.goto(
+    await page.goto(
         vendor_url, wait_until="domcontentloaded", timeout=45_000
     )
     await _accept_cookies(page)
@@ -349,12 +352,13 @@ async def _audit_vendor(
     vendor_html = await page.content()
     _write_text(vendor_dir / "vendor_base.html", vendor_html)
     _write_json(
-        vendor_dir / "vendor_base_next_data.json", extract_next_payloads(vendor_html)
+        vendor_dir /
+        "vendor_base_next_data.json", extract_next_payloads(vendor_html)
     )
 
     category_url = _choose_category_url(vendor_url, vendor_html)
     result["category_url"] = category_url
-    response = await page.goto(
+    await page.goto(
         category_url, wait_until="domcontentloaded", timeout=45_000
     )
     await _accept_cookies(page)
@@ -372,7 +376,8 @@ async def _audit_vendor(
         normalize_vehicle_url(url) for url in parse_vehicle_listing_urls(category_html)
     ]
     dom_cards = await _dom_listing_cards(page)
-    card_text = "\n\n---CARD---\n\n".join(card.get("text", "") for card in dom_cards)
+    card_text = "\n\n---CARD---\n\n".join(card.get("text", "")
+                                          for card in dom_cards)
 
     _write_json(
         vendor_dir / "listing_cards.json",
@@ -384,7 +389,8 @@ async def _audit_vendor(
         },
     )
     _write_json(
-        vendor_dir / "vehicle_card_raw.json", raw_listings[0] if raw_listings else {}
+        vendor_dir /
+        "vehicle_card_raw.json", raw_listings[0] if raw_listings else {}
     )
     _write_text(vendor_dir / "vehicle_card_text.txt", card_text)
     _write_json(
@@ -406,7 +412,8 @@ async def _audit_vendor(
         ):
             detail_urls.append(normalized)
 
-    result["listing_count"] = max(len(summaries), len(raw_listings), len(dom_cards))
+    result["listing_count"] = max(
+        len(summaries), len(raw_listings), len(dom_cards))
     result["real_detail_url_count"] = len(detail_urls)
     result["target_key_hits_in_listing_payload"] = _recursive_keyword_hits(
         raw_listings
@@ -532,7 +539,8 @@ async def _run_strategy(
         )
         try:
             for index, sample in enumerate(samples, start=1):
-                attempt_dir = strategy_dir / f"vehicle_{index}_{_safe_name(sample.url)}"
+                attempt_dir = strategy_dir / \
+                    f"vehicle_{index}_{_safe_name(sample.url)}"
                 attempt_dir.mkdir(parents=True, exist_ok=True)
                 recorder = NetworkRecorder(attempt_dir, "detail")
                 page = await context.new_page()
@@ -702,7 +710,8 @@ async def _attempt_strategy_page(
                 )
             except Exception:
                 pass
-        _write_json(audit_root / "detail_attempt_response_headers.json", headers)
+        _write_json(
+            audit_root / "detail_attempt_response_headers.json", headers)
     _write_json(attempt_dir / "detail_attempt_summary.json", attempt)
     return attempt
 
@@ -755,8 +764,10 @@ async def _listing_locator(page: Page, url: str):
     listing_id = dict(parse_qsl(parsed.query)).get("id", "")
     selectors = []
     if listing_id:
-        selectors.extend([f'a[href*="{listing_id}"]', f'[href*="{listing_id}"]'])
-    selectors.extend(['a[href*="/fahrzeuge/details"]', 'a[href*="/auto-inserat/"]'])
+        selectors.extend(
+            [f'a[href*="{listing_id}"]', f'[href*="{listing_id}"]'])
+    selectors.extend(['a[href*="/fahrzeuge/details"]',
+                     'a[href*="/auto-inserat/"]'])
     for selector in selectors:
         locator = page.locator(selector).first
         try:
@@ -775,7 +786,8 @@ async def _open_browser_context(
 ) -> tuple[Browser | None, BrowserContext]:
     headless = config.browser_mode == "headless" or config.headless
     browser_type = pw.firefox if browser_name == "firefox" else pw.chromium
-    launch_kwargs: dict[str, Any] = {"headless": headless, "slow_mo": config.slow_mo}
+    launch_kwargs: dict[str, Any] = {
+        "headless": headless, "slow_mo": config.slow_mo}
     if browser_name == "chrome":
         launch_kwargs["channel"] = "chrome"
     if browser_name in {"chromium", "chrome"}:
@@ -882,7 +894,8 @@ def _choose_category_url(vendor_url: str, html: str) -> str:
     options = parse_vehicle_category_options(html, require_positive_count=True)
     values = [str(option.get("value") or "") for option in options]
     category = (
-        "Car" if "Car" in values else next((value for value in values if value), "")
+        "Car" if "Car" in values else next(
+            (value for value in values if value), "")
     )
     if not category:
         return vendor_url
@@ -1164,7 +1177,8 @@ def _safe_name(value: str) -> str:
 
 def _write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    path.write_text(json.dumps(value, ensure_ascii=False,
+                    indent=2), encoding="utf-8")
 
 
 def _write_text(path: Path, value: str) -> None:

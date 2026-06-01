@@ -19,6 +19,8 @@ from playwright.async_api import (
     Playwright,
 )
 
+from src.config import ScraperConfig
+
 try:
     from playwright._impl._errors import TargetClosedError
 except Exception:  # pragma: no cover - compatibility fallback for Playwright internals
@@ -41,8 +43,6 @@ def _is_target_closed_error(exc: Exception) -> bool:
         or "target closed" in msg
     )
 
-
-from src.config import ScraperConfig
 
 logger = logging.getLogger("mobile_de.browser")
 
@@ -140,7 +140,8 @@ class BrowserManager:
                 and self.config.storage_state.exists()
             ):
                 if getattr(self.config, "use_storage_state", False):
-                    context_kwargs["storage_state"] = str(self.config.storage_state)
+                    context_kwargs["storage_state"] = str(
+                        self.config.storage_state)
                     logger.info(
                         "Loaded storage state from %s", self.config.storage_state
                     )
@@ -243,7 +244,8 @@ class BrowserManager:
 
         if visible_button is None:
             self._increment_config_counter("cookie_modal_remaining_count")
-            logger.warning("Cookie modal remaining; no visible accept button found.")
+            logger.warning(
+                "Cookie modal remaining; no visible accept button found.")
             return
 
         try:
@@ -287,7 +289,8 @@ class BrowserManager:
                     if await candidate.is_visible(timeout=1000):
                         return candidate
             except Exception as e:
-                logger.debug("Cookie consent selector failed (%s): %s", selector, e)
+                logger.debug(
+                    "Cookie consent selector failed (%s): %s", selector, e)
         return None
 
     async def _cookie_modal_container_visible(self) -> bool:
@@ -314,7 +317,8 @@ class BrowserManager:
             for force in [False, True]:
                 try:
                     await button.click(timeout=5000, force=force)
-                    self._increment_config_counter("cookie_consent_click_count")
+                    self._increment_config_counter(
+                        "cookie_consent_click_count")
                     await self._wait_for_cookie_modal_to_disappear()
                     if not await self._cookie_modal_visible():
                         return
@@ -493,7 +497,8 @@ class BrowserManager:
             await self.start()
             return self._page is not None
         except Exception as exc:
-            logger.error("Failed to restart browser after TargetClosedError: %s", exc)
+            logger.error(
+                "Failed to restart browser after TargetClosedError: %s", exc)
             self.mark_unhealthy(str(exc))
             return False
 
@@ -526,7 +531,8 @@ class BrowserManager:
             await self._page.screenshot(path=str(screenshot_path), full_page=True)
             self.last_screenshot_path = str(screenshot_path)
         except Exception as exc:
-            logger.debug("Could not save debug screenshot for %s: %s", url, exc)
+            logger.debug(
+                "Could not save debug screenshot for %s: %s", url, exc)
 
         if self.last_html_dump_path or self.last_screenshot_path:
             logger.info(
@@ -581,7 +587,8 @@ class BrowserManager:
         await self._save_storage_state()
         if self._page_is_about_blank():
             self._increment_config_counter("idle_about_blank_count")
-            logger.info("Closing idle about:blank page for role=%s.", self.role)
+            logger.info(
+                "Closing idle about:blank page for role=%s.", self.role)
 
         for resource_name, resource in [
             ("page", self._page),

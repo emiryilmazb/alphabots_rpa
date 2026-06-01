@@ -17,21 +17,21 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.config import ScraperConfig
-from src.models import (
+from src.config import ScraperConfig  # noqa: E402
+from src.models import (  # noqa: E402
     FINANCING_REQUIRED_FIELDS,
     VEHICLE_COLUMNS,
     VEHICLE_TECHNICAL_FIELDS,
 )
-from src.scraper.detail_page import classify_detail_page
-from src.scraper.fetchers import (
+from src.scraper.detail_page import classify_detail_page  # noqa: E402
+from src.scraper.fetchers import (  # noqa: E402
     FetchResult,
     FetchStrategyManager,
     HostChromeCdpFetcher,
     vehicle_id_from_url,
 )
-from src.scraper.fetchers.base import StaticValidation
-from src.scraper.parsers import (
+from src.scraper.fetchers.base import StaticValidation  # noqa: E402
+from src.scraper.parsers import (  # noqa: E402
     DETAIL_TARGET_FIELDS,
     clean_text,
     parse_vehicle_detail_fields,
@@ -98,7 +98,8 @@ def parse_methods(value: str) -> list[str]:
 def vehicle_urls(vehicle: dict[str, Any], *, source_only: bool = False) -> list[str]:
     ordered = []
     keys = (
-        ["source_vehicle_url"] if source_only else ["Vehicle_URL", "source_vehicle_url"]
+        ["source_vehicle_url"] if source_only else [
+            "Vehicle_URL", "source_vehicle_url"]
     )
     for key in keys:
         url = clean_text(vehicle.get(key, ""))
@@ -152,7 +153,8 @@ def merge_non_empty_fields(
             continue
         existing_value = clean_text(vehicle.get(key, ""))
         if existing_value != parsed_value:
-            conflicts[key] = {"existing": existing_value, "detail": parsed_value}
+            conflicts[key] = {
+                "existing": existing_value, "detail": parsed_value}
 
     if vehicle.get("Financing") and not is_present(vehicle.get("Finanzierung", "")):
         vehicle["Finanzierung"] = vehicle["Financing"]
@@ -165,7 +167,8 @@ def merge_non_empty_fields(
             for field in clean_text(vehicle.get("detail_fields_filled", "")).split(",")
             if clean_text(field)
         ]
-        vehicle["detail_fields_filled"] = ", ".join(dict.fromkeys([*previous, *filled]))
+        vehicle["detail_fields_filled"] = ", ".join(
+            dict.fromkeys([*previous, *filled]))
 
     if conflicts:
         vehicle["detail_enrichment_conflicts_json"] = json.dumps(
@@ -392,7 +395,8 @@ class DetailEnricher:
                 if parsed:
                     self.counts["existing_success_count"] += 1
                     self._cache_html(vehicle_id, result.html)
-                    self._cache_parsed(vehicle_id, parsed, vehicle, source="existing")
+                    self._cache_parsed(vehicle_id, parsed,
+                                       vehicle, source="existing")
                     self._apply_parsed_fields(
                         vehicle,
                         parsed,
@@ -548,7 +552,8 @@ class DetailEnricher:
                 continue
             html = path.read_text(encoding="utf-8")
             parsed = parse_vehicle_detail_fields(html)
-            parsed = {key: value for key, value in parsed.items() if is_present(value)}
+            parsed = {key: value for key,
+                      value in parsed.items() if is_present(value)}
             if parsed:
                 self._cache_html(vehicle_id, html)
                 return parsed
@@ -563,7 +568,8 @@ class DetailEnricher:
 
     def _cache_html(self, vehicle_id: str, html: str) -> None:
         self.html_cache_dir.mkdir(parents=True, exist_ok=True)
-        (self.html_cache_dir / f"{vehicle_id}.html").write_text(html, encoding="utf-8")
+        (self.html_cache_dir /
+         f"{vehicle_id}.html").write_text(html, encoding="utf-8")
 
     def _cache_parsed(
         self,
@@ -579,7 +585,8 @@ class DetailEnricher:
             {
                 "vehicle_id": vehicle_id,
                 "url": clean_text(
-                    vehicle.get("Vehicle_URL") or vehicle.get("source_vehicle_url", "")
+                    vehicle.get("Vehicle_URL") or vehicle.get(
+                        "source_vehicle_url", "")
                 ),
                 "source": source,
                 "cached_at_utc": utc_now(),
@@ -623,7 +630,8 @@ class DetailEnricher:
                 with self.failed_ids_path.open("r", encoding="utf-8") as handle:
                     data = json.load(handle)
                 if isinstance(data, list):
-                    existing = [item for item in data if isinstance(item, dict)]
+                    existing = [
+                        item for item in data if isinstance(item, dict)]
             except (OSError, json.JSONDecodeError):
                 existing = []
         unique: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -784,8 +792,10 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         method_cooldown_seconds=args.method_cooldown_seconds,
         retry_only_missing=args.retry_only_missing.lower() == "true",
         resume=args.resume.lower() == "true",
-        manual_html_dir=Path(args.manual_html_dir) if args.manual_html_dir else None,
-        failed_ids_path=Path(args.failed_ids_path) if args.failed_ids_path else None,
+        manual_html_dir=Path(
+            args.manual_html_dir) if args.manual_html_dir else None,
+        failed_ids_path=Path(
+            args.failed_ids_path) if args.failed_ids_path else None,
     )
     try:
         summary = await enricher.enrich_records(records, max_vehicles=args.max_vehicles)
@@ -804,7 +814,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input-cars", required=True, help="Existing raw cars JSON")
+    parser.add_argument("--input-cars", required=True,
+                        help="Existing raw cars JSON")
     parser.add_argument(
         "--output-cars", required=True, help="Output enriched cars JSON"
     )
@@ -819,7 +830,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Comma-separated method chain: cache,listing,existing,host-chrome-cdp,original-url,manual-html",
     )
     parser.add_argument("--chrome-cdp-url", default="http://127.0.0.1:9222")
-    parser.add_argument("--max-vehicles", type=int, default=0, help="0 means no limit")
+    parser.add_argument("--max-vehicles", type=int,
+                        default=0, help="0 means no limit")
     parser.add_argument("--sleep-seconds", type=float, default=0.0)
     parser.add_argument("--sleep-jitter-seconds", type=float, default=0.0)
     parser.add_argument(

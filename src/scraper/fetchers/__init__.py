@@ -19,4 +19,7 @@ __all__ = [
     "HostChromeCdpFetcher",
     "PlaywrightFetcher",
     "StaticValidation",
+    "UcPopupFetcher",
+    "UcPopupResult",
+    "vehicle_id_from_url",
 ]
