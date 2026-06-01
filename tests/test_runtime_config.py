@@ -41,7 +41,9 @@ def test_parse_browser_options(monkeypatch):
             "--detail-policy",
             "financing-only",
             "--detail-open-strategy",
-            "uc-popup",
+            "HOST-CHROME-CDP",
+            "--chrome-cdp-url",
+            "http://127.0.0.1:9333",
             "--detail-max-retries",
             "1",
             "--output-dir",
@@ -66,7 +68,8 @@ def test_parse_browser_options(monkeypatch):
     assert config.vendor_concurrency == 2
     assert config.vehicle_detail_concurrency == 3
     assert config.detail_policy == "financing-only"
-    assert config.detail_open_strategy == "uc-popup"
+    assert config.detail_open_strategy == "host-chrome-cdp"
+    assert config.chrome_cdp_url == "http://127.0.0.1:9333"
     assert config.detail_max_retries == 1
     assert config.clean_run is True
     assert config.resume is False

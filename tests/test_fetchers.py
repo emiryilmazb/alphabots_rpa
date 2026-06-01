@@ -9,6 +9,7 @@ from src.scraper.fetchers import (
     CurlFetcher,
     FetchResult,
     FetchStrategyManager,
+    HostChromeCdpFetcher,
     PlaywrightFetcher,
     StaticValidation,
     vehicle_id_from_url,
@@ -203,6 +204,22 @@ def test_static_validation_rejects_dynamic_or_blocked_html():
 
     assert FetchStrategyManager.validate_static_html(blocked).ok is False
     assert FetchStrategyManager.validate_static_html(dynamic).ok is False
+
+
+def test_host_chrome_cdp_classifies_blocked_pages_as_failures():
+    assert HostChromeCdpFetcher._failure_type("error_page") == "host_chrome_cdp_blocked_or_challenge"
+    assert HostChromeCdpFetcher._failure_type("home_redirect") == "host_chrome_cdp_not_detail_page"
+    assert HostChromeCdpFetcher._failure_type("real_detail_page") == ""
+
+
+def test_host_chrome_cdp_adds_german_language_for_detail_pages():
+    url = "https://suchen.mobile.de/fahrzeuge/details.html?id=123&foo=bar"
+
+    assert HostChromeCdpFetcher._with_german_language(url) == (
+        "https://suchen.mobile.de/fahrzeuge/details.html?id=123&foo=bar&lang=de"
+    )
+    assert HostChromeCdpFetcher._with_german_language(url + "&lang=en").endswith("lang=de")
+    assert HostChromeCdpFetcher._with_german_language("https://example.test/details.html?id=123").endswith("id=123")
 
 
 def test_curl_fetcher_short_circuits_after_module_not_found():

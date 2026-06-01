@@ -535,6 +535,7 @@ async def _scrape_vehicles(
     if all_cars:
         checkpoint.save("vehicles", _merge_vehicle_checkpoint(loaded_cars, all_cars))
 
+    await vehicle_scraper.close()
     return all_cars
 
 
@@ -902,6 +903,7 @@ def _compute_run_summary(
         "strict_headless_blocked": bool(strict_headless_blocked),
         "fetch_strategy": config.fetch_strategy,
         "detail_policy": config.detail_policy,
+        "detail_open_strategy": str(getattr(config, "detail_open_strategy", "")),
         "vendor_concurrency": config.vendor_concurrency,
         "vehicle_detail_concurrency": config.vehicle_detail_concurrency,
         "regional_discovered_count": int(getattr(config, "regional_discovered_count", 0) or len(df_vendors)),
@@ -932,6 +934,10 @@ def _compute_run_summary(
         "active_playwright_browser_count": int(getattr(config, "active_playwright_browser_count", 0) or 0),
         "max_active_playwright_browser_count": int(getattr(config, "max_active_playwright_browser_count", 0) or 0),
         "idle_about_blank_count": int(getattr(config, "idle_about_blank_count", 0) or 0),
+        "host_chrome_cdp_used_count": int(getattr(config, "host_chrome_cdp_used_count", 0) or 0),
+        "host_chrome_cdp_success_count": int(getattr(config, "host_chrome_cdp_success_count", 0) or 0),
+        "host_chrome_cdp_failed_count": int(getattr(config, "host_chrome_cdp_failed_count", 0) or 0),
+        "host_chrome_cdp_blocked_count": int(getattr(config, "host_chrome_cdp_blocked_count", 0) or 0),
         "avg_seconds_per_vehicle": round(avg_sec, 2),
         "vehicles_per_hour": round(veh_per_hour, 2),
         "estimated_hours_for_20000_vehicles": round(est_20k, 2),

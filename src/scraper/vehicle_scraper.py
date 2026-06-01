@@ -16,7 +16,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
 from src.config import ScraperConfig
 from src.scraper.browser import BrowserManager
-from src.scraper.fetchers import FetchResult, FetchStrategyManager, StaticValidation
+from src.scraper.fetchers import FetchResult, FetchStrategyManager, HostChromeCdpFetcher, StaticValidation
 from src.scraper.fetchers.uc_popup_fetcher import UcPopupFetcher
 from src.scraper.parsers import (
     DETAIL_TARGET_FIELDS,
@@ -58,9 +58,21 @@ class VehicleScraper:
         self.config = config
         self.fetch_manager = FetchStrategyManager(config, browser)
         self.uc_popup_fetcher = UcPopupFetcher(config)
+        self.host_chrome_cdp_fetcher = HostChromeCdpFetcher(config)
         self.listing_summaries: dict[str, dict[str, str]] = {}
         self.category_metadata: dict[str, dict[str, Any]] = {}
         self.last_category_report: list[dict[str, Any]] = []
+
+    async def close(self) -> None:
+        """Release optional detail-strategy resources owned by this scraper."""
+        try:
+            self.uc_popup_fetcher.close()
+        except Exception:
+            pass
+        try:
+            await self.host_chrome_cdp_fetcher.close()
+        except Exception:
+            pass
 
     async def collect_vehicle_urls(self, dealer_url: str) -> list[str]:
         """
@@ -728,6 +740,8 @@ class VehicleScraper:
                 time.perf_counter() - uc_started,
             )
             fetch_result = uc_result.fetch_result
+        elif self.config.detail_open_strategy == "host-chrome-cdp":
+            fetch_result = await self.host_chrome_cdp_fetcher.fetch(vehicle_url)
         else:
             fetch_result = await self.fetch_manager.fetch(
                 vehicle_url,
@@ -764,6 +778,8 @@ class VehicleScraper:
         vehicle["vehicle_data_source"] = (
             "detail_page_uc_popup"
             if fetch_result.strategy == "uc-popup"
+            else "detail_page_host_chrome_cdp"
+            if fetch_result.strategy == "host-chrome-cdp"
             else "detail_page"
             if fetch_result.strategy.startswith("playwright")
             else "static_html"

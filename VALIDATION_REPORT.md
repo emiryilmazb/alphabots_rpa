@@ -2,8 +2,9 @@
 
 ## 1. Final Branch and Purpose
 - **final branch:** `improvements`
-- **production/default behavior:** stable safe profile
-- **adaptive profile:** opt-in only
+- **production/deployable architecture:** Docker/Xvfb
+- **host Chrome CDP:** optional local recovery/enrichment only
+- **adaptive profile:** explicit command profile, not an implicit local browser dependency
 
 ## 2. Setup
 - Python venv setup
@@ -13,28 +14,35 @@
 
 ## 3. Main Run Commands
 
-Stable default/safe profile example:
+Production/server command for the deployable Docker/Xvfb path:
+```powershell
+venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 0 --max-cars-per-vendor 0 --max-pages 100 --shard-count 1 --clean --uc-wait-profile adaptive --uc-block-resources false
+```
+
+One shard is safest under current live-source blocking. Two shards can be used if the source remains stable. Four shards are for controlled validation/benchmarking, not a final high-detail run while blocking is active.
+
+Conservative capped validation command:
 ```powershell
 venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 25 --max-cars-per-vendor 10 --max-pages 40 --shard-count 4 --clean --uc-wait-profile safe --uc-block-resources true
 ```
 
-Full uncapped command should be documented cautiously, not recommended for casual validation:
-```powershell
-venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 0 --max-cars-per-vendor 0 --shard-count 4 --clean --uc-wait-profile safe --uc-block-resources true
-```
-
-Adaptive opt-in example:
+Adaptive capped validation example:
 ```powershell
 venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 25 --max-cars-per-vendor 10 --max-pages 40 --shard-count 4 --clean --uc-wait-profile adaptive --uc-block-resources true
 ```
 
-Make clear:
-- adaptive is experimental/opt-in
-- adaptive is not default
-- default remains safe
+Optional local CDP enrichment after a normal scrape:
+```powershell
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\mobilede_detail_profile"
+venv\Scripts\python.exe tools\enrich_vehicle_details.py --input-cars <cars_raw.json> --output-cars <cars_enriched.json> --cache-dir data\detail_cache\host_cdp_enrichment --methods cache,listing,host-chrome-cdp,manual-html --chrome-cdp-url http://127.0.0.1:9222 --max-vehicles 25 --sleep-seconds 12 --sleep-jitter-seconds 8 --stop-after-blocks 5 --max-block-rate 0.4 --resume true --retry-only-missing true
+```
+
+CDP is not required for EC2/ECS deployment and is never used unless explicitly selected.
 
 ## 4. Sharding
-- 4-shard is recommended for the tested 16GB Windows host
+- 1 shard is safest under live-source blocking
+- 2 shards can be used if the source remains stable
+- 4-shard is recommended only for controlled validation/benchmarking on the tested 16GB Windows host
 - 8-shard failed due to host resource limits
 - 5/6/7 shard experiments showed diminishing returns / instability risk
 - isolated data roots prevent SQLite locks
@@ -87,6 +95,8 @@ Make clear:
 - scraping can be blocked or rate-limited
 - adaptive profile can improve live detail loading but remains opt-in
 - 4-shard recommended, higher shard counts not guaranteed on 16GB Windows host
+- no fake values are inserted; missing values are reported in Data_Coverage and Requirements_Compliance
+- `Andere` is the approved fallback for task-defined classification values outside the requested origin/category lists
 
 ## 10. Final Verification Statement
 Technical/detail fields are complete only when detail pages are successfully reached. Financing fields are extracted where available from the source. Schema completeness is guaranteed; source completeness is measured.

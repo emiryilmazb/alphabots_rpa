@@ -47,28 +47,27 @@ docker compose build scraper
 
 ## Recommended Commands
 
-Stable default/safe profile example:
+Production/server command for the deployable Docker/Xvfb path:
+
+```powershell
+venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 0 --max-cars-per-vendor 0 --max-pages 100 --shard-count 1 --clean --uc-wait-profile adaptive --uc-block-resources false
+```
+
+This is an explicit production profile, not a change to the CLI defaults. Docker/Xvfb remains the deployable architecture for EC2/ECS-style execution. One shard is safest while the live source is blocking detail pages; two shards can be used if the source remains stable. Four shards are intended for controlled validation or benchmarking, not for a high-detail final run when blocking is active.
+
+Conservative capped validation command:
 
 ```powershell
 venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 25 --max-cars-per-vendor 10 --max-pages 40 --shard-count 4 --clean --uc-wait-profile safe --uc-block-resources true
 ```
 
-Full uncapped command should be documented cautiously, not recommended for casual validation:
-
-```powershell
-venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 0 --max-cars-per-vendor 0 --shard-count 4 --clean --uc-wait-profile safe --uc-block-resources true
-```
-
-Adaptive opt-in example:
+Adaptive capped validation example:
 
 ```powershell
 venv\Scripts\python.exe run_4shard.py --state nordrhein-westfalen --max-vendors 25 --max-cars-per-vendor 10 --max-pages 40 --shard-count 4 --clean --uc-wait-profile adaptive --uc-block-resources true
 ```
 
-Make clear:
-- adaptive is experimental/opt-in
-- adaptive is not default
-- default remains safe
+Adaptive wait must be selected explicitly with `--uc-wait-profile adaptive`; it is not an implicit local Chrome/CDP dependency.
 
 ## Execution Modes
 
@@ -93,6 +92,28 @@ The strategy opens the current vendor/category page, collects live mobile.de det
 
 Run UC popup with `--vehicle-detail-concurrency 1`. The output metrics include `detail_open_strategy`, `popup_opened_count`, `popup_captured_count`, `popup_capture_failed_count`, `wrong_tab_capture_count`, `real_detail_page_loaded_count`, `detail_home_redirect_count`, `detail_error_page_count`, `stale_redirect_count`, `uc_popup_success_count`, `uc_popup_failed_count`, and `detail_target_fields_extracted_count`.
 
+## Host Chrome CDP Detail Strategy
+
+`--detail-open-strategy host-chrome-cdp` is an emergency, opt-in detail strategy for local runs where the user's normal Chrome session can load mobile.de detail pages but automated browser launches are blocked. It connects to an already-running Chrome remote debugging endpoint and reads rendered detail HTML from that host browser session. It is never used by default.
+
+Start a separate Chrome profile first:
+
+```powershell
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\mobilede_detail_profile"
+```
+
+Then run with `--detail-open-strategy host-chrome-cdp --chrome-cdp-url http://127.0.0.1:9222` and `--vehicle-detail-concurrency 1`. If the CDP endpoint is unavailable, or if the page classifies as a block/CAPTCHA/login challenge, the run records the failure and keeps listing fallback data. The strategy does not solve CAPTCHA and closes only tabs it creates.
+
+CDP is not required for server deployment. It is an optional local recovery path when a normal user browser can access pages that automated browser contexts cannot.
+
+Retryable local enrichment can be run after a normal scrape:
+
+```powershell
+venv\Scripts\python.exe tools\enrich_vehicle_details.py --input-cars <cars_raw.json> --output-cars <cars_enriched.json> --cache-dir data\detail_cache\host_cdp_enrichment --methods cache,listing,host-chrome-cdp,manual-html --chrome-cdp-url http://127.0.0.1:9222 --max-vehicles 25 --sleep-seconds 12 --sleep-jitter-seconds 8 --stop-after-blocks 5 --max-block-rate 0.4 --resume true --retry-only-missing true
+```
+
+The enrichment tool uses cached parsed detail fields before any live request, records failed IDs for later retry, disables live methods when blocking thresholds are hit, and only fills empty fields with values extracted from source HTML.
+
 ## CLI Options
 
 | Option | Default | Purpose |
@@ -104,7 +125,8 @@ Run UC popup with `--vehicle-detail-concurrency 1`. The output metrics include `
 | `--browser-mode` | `headed` | `headless`, `headed`, or `xvfb` |
 | `--fetch-strategy` | `auto` | `auto`, `curl`, or `playwright` |
 | `--detail-policy` | `missing-required` | `always`, `missing-required`, `financing-only`, or `never` |
-| `--detail-open-strategy` | `auto` | `auto`, `listing-only`, `playwright-direct`, `playwright-click`, or `uc-popup`; legacy aliases are accepted |
+| `--detail-open-strategy` | `auto` | `auto`, `listing-only`, `playwright-direct`, `playwright-click`, `uc-popup`, or `host-chrome-cdp`; legacy aliases are accepted |
+| `--chrome-cdp-url` | `http://127.0.0.1:9222` | Existing host Chrome CDP endpoint for `host-chrome-cdp` |
 | `--source-audit` | `false` | Save tiny-sample raw source artifacts, network logs, and detail strategy matrix evidence |
 | `--source-audit-only` | `false` | Run only source audit/matrix and skip normal exports |
 | `--source-audit-max-vendors` | `2` | Max vendors inspected by source audit |
@@ -254,9 +276,11 @@ Some vehicle detail fields such as CO₂-Emissionen, Baureihe, Ausstattungslinie
 
 Targeted source audit found that some listing payloads expose previous-owner count as `attr.pvo`; the parser maps this real source value to `Anzahl der Fahrzeughalter`. The optional UC popup strategy can increase measured coverage for CO₂-Emissionen, Baureihe, and Ausstattungslinie when mobile.de returns a real detail page for a live listing.
 
-UC popup is slower than listing extraction and should be run with detail concurrency 1. If the dependency stack is unavailable, the run records `uc_dependency_missing` with the message `uc-popup strategy requires undetected_chromedriver and local Chrome.` and preserves listing fallback output.
+UC popup and host Chrome CDP are slower than listing extraction and should be run with detail concurrency 1. If the UC dependency stack is unavailable, the run records `uc_dependency_missing` with the message `uc-popup strategy requires undetected_chromedriver and local Chrome.` and preserves listing fallback output. If host Chrome CDP is unavailable, the run records `host_chrome_cdp_failed` / `host_chrome_cdp_*` metrics and preserves listing fallback output.
 
 Financing fields are populated only when mobile.de exposes a financing offer in the listing payload or detail source. Dealer homepage, second phone, mobile phone, and fax fields can be sparse because not every dealer publishes those values.
+
+No fake values are inserted. `Andere` is the approved fallback for task-defined classification values that do not map to Deutschland, Italien, Korea, Japan, Frankreich, PKW, Motorrad, Freizeitfahrzeuge, or LKW.
 
 Regional search state and actual vendor location are kept separate:
 

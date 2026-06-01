@@ -8,7 +8,7 @@ def main() -> None:
     parser.add_argument("--shard-count", type=int, default=4)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--output-root", default="data_shards")
-    parser.add_argument("--clean", action="store_true", default=True)
+    parser.add_argument("--clean", action="store_true", default=False)
     parser.add_argument("--uc-wait-profile", default="safe")
     parser.add_argument("--uc-block-resources", default="false")
     parser.add_argument("--merge-output", default="data/merged/final_sharded_run")
@@ -21,8 +21,12 @@ def main() -> None:
 
     base = os.getcwd()
     if args.clean:
-        subprocess.run("docker rm -f $(docker ps -aq)", shell=True, capture_output=True)
-        subprocess.run("taskkill /F /IM chromedriver.exe /T", shell=True, capture_output=True)
+        for i in range(args.shard_count):
+            subprocess.run(
+                f"docker compose -p mobilede_shard_{i} down --remove-orphans",
+                shell=True,
+                capture_output=True,
+            )
 
     procs = []
     t0 = time.time()
@@ -35,11 +39,12 @@ def main() -> None:
         cmd = (f'docker compose -p mobilede_shard_{i} run --rm '
                f'-v "{base}\\{shard_data}:/app/data" -v "{base}\\{shard_logs}:/app/logs" '
                f'-e VENDOR_SHARD_INDEX={i} -e VENDOR_SHARD_COUNT={args.shard_count} '
-               f'-e UC_BLOCK_RESOURCES=true -e BROWSER_MODE=xvfb scraper python -m src.main '
+               f'-e UC_BLOCK_RESOURCES={args.uc_block_resources} -e BROWSER_MODE=xvfb scraper python -m src.main '
                f'--state {args.state} --pipeline-mode sqlite --browser-mode xvfb '
                f'--fetch-strategy auto --detail-policy missing-required --detail-open-strategy uc-popup '
                f'--detail-max-retries 1 --max-vendors {args.max_vendors} --max-cars-per-vendor {args.max_cars_per_vendor} '
-               f'--vendor-concurrency 1 --vehicle-detail-concurrency 1 --benchmark --clean-run true')
+               f'--vendor-concurrency 1 --vehicle-detail-concurrency 1 --benchmark --clean-run true '
+               f'--uc-wait-profile {args.uc_wait_profile} --uc-block-resources {args.uc_block_resources}')
         if args.max_pages > 0:
             cmd += f' --max-pages {args.max_pages}'
         procs.append(subprocess.Popen(["powershell", "-Command", cmd]))
