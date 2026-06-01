@@ -13,6 +13,7 @@ def main() -> None:
     parser.add_argument("--uc-block-resources", default="false")
     parser.add_argument("--merge-output", default="data/merged/final_sharded_run")
     parser.add_argument("--max-pages", type=int, default=0)
+    parser.add_argument("--skip-vehicle-details", default="false")
     args = parser.parse_args()
 
     if args.shard_count >= 8 and not args.force:
@@ -47,6 +48,8 @@ def main() -> None:
                f'--uc-wait-profile {args.uc_wait_profile} --uc-block-resources {args.uc_block_resources}')
         if args.max_pages > 0:
             cmd += f' --max-pages {args.max_pages}'
+        if args.skip_vehicle_details.lower() == 'true':
+            cmd += f' --skip-vehicle-details true'
         procs.append(subprocess.Popen(["powershell", "-Command", cmd]))
 
     for p in procs: p.wait()
